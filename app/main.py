@@ -3,26 +3,7 @@ import asyncio
 
 
 def parse_resp(data):
-    if not data:
-        return None, None
-    lines = data.decode().split("\r\n")
-    if not lines[0].startswith("*"):
-        return None, None
-
-    parts = []
-    i = 1
-    while i < len(lines):
-        if lines[i].startswith("$"):
-            i += 1
-            if i < len(lines):
-                parts.append(lines[i])
-        i = 1
-
-    if not parts:
-        return None, None
-
-    command = parts[0].upper()
-    args = parts[1:] if len(parts) > 1 else []
+    command, args = data.split(b"\r\n")
     return command, args
 
 
