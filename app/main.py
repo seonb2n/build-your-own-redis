@@ -1,10 +1,39 @@
 import socket  # noqa: F401
 import asyncio
 
+def extract_command(data):
+    if not data:
+        return None
+
+    try:
+        lines = data.split(b"\r\n")
+        if not lines[0].startswith(b"*"):
+            return None
+
+        if len(lines) > 2 and lines[1].startswith(b"$"):
+            return lines[2].decode().upper()
+        return None
+    except Exception:
+        return None
+
+
+def extract_value(data):
+    try:
+        lines = data.split(b"\r\n")
+        if not lines[0].startswith(b"*") or len(lines) < 5:
+            return None
+
+        if lines[3].startswith(b"$"):
+            return lines[4].decode()
+        return None
+    except Exception:
+        return None
+
 
 def parse_resp(data):
-    [_, _, command, _, value] = data.strip().split(b"\r\n")
-    return command.upper(), value
+    command = extract_command(data)
+    value = extract_value(data) if command == "ECHO" else None
+    return command, value
 
 
 async def handle_client(reader, writer):
@@ -13,7 +42,6 @@ async def handle_client(reader, writer):
         if not data:
             break
 
-        # RESP 데이터 파싱
         command, args = parse_resp(data)
 
         if command == "PING":
