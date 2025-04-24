@@ -4,9 +4,7 @@ import asyncio
 
 def parse_resp(data):
     [_, _, command, _, value] = data.strip().split(b"\r\n")
-    print(f"command=${command}")
-    print(f"value=${value}")
-    return command, value
+    return command.upper(), value
 
 
 async def handle_client(reader, writer):
@@ -21,8 +19,7 @@ async def handle_client(reader, writer):
         if command == "PING":
             writer.write(b"+PONG\r\n")
         elif command == "ECHO" and args:
-            # ECHO 명령어: 첫 번째 인자를 반환 (RESP 단순 문자열 형식)
-            response = f"+{args[0]}\r\n".encode()
+            response = f"+{args}\r\n".encode()
             writer.write(response)
         else:
             # 지원하지 않는 명령어 또는 잘못된 형식
