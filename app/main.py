@@ -3,10 +3,8 @@ import asyncio
 
 
 def parse_resp(data):
-    command, args = data.split(b"\r\n")
-    print(f"command: {command}")
-    print(f"args: {args}")
-    return command, args
+    [_, _, command, _, value] = data.strip().split(b"\r\n")
+    return command, value
 
 
 async def handle_client(reader, writer):
