@@ -4,6 +4,8 @@ import asyncio
 
 def parse_resp(data):
     command, args = data.split(b"\r\n")
+    print(f"command: {command}")
+    print(f"args: {args}")
     return command, args
 
 
