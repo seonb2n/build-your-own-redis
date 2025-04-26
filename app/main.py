@@ -63,7 +63,7 @@ async def handle_client(reader, writer):
             writer.write(response)
         elif command == "SET" and args:
             if args[2] is not None and args[2] == 'px':
-                delta = datetime.timedelta(milliseconds=args[3])
+                delta = datetime.timedelta(milliseconds=int(args[3]))
                 redis_map[args[0]] = (args[1], datetime.datetime.now() + delta)
             else :
                 redis_map[args[0]] = (args[1], -1)
