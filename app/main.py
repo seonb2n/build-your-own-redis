@@ -1,5 +1,7 @@
 import socket  # noqa: F401
 import asyncio
+import time
+import datetime
 
 COMMANDS_WITH_ARGS = { "ECHO", "SET", "GET" }
 
@@ -60,11 +62,19 @@ async def handle_client(reader, writer):
             response = f"+{args[0]}\r\n".encode()
             writer.write(response)
         elif command == "SET" and args:
-            redis_map[args[0]] = args[1]
+            if args[2] is not None and args[2] == 'px':
+                delta = datetime.timedelta(milliseconds=args[3])
+                redis_map[args[0]] = (args[1], datetime.datetime.now() + delta)
+            else :
+                redis_map[args[0]] = (args[1], -1)
             writer.write(b"+OK\r\n")
         elif command == "GET" and args:
-            response = f"+{redis_map.get(args[0])}\r\n".encode()
-            writer.write(response)
+            found_value = redis_map.get(args[0])
+            if found_value[1] != -1 and found_value[1] < datetime.datetime.now():
+                response = f"+{redis_map.get(args[0])}\r\n".encode()
+                writer.write(response)
+            else:
+                writer.write(b"-1\r\n")
         else:
             # 지원하지 않는 명령어 또는 잘못된 형식
             writer.write(b"-ERR unknown command or invalid arguments\r\n")
