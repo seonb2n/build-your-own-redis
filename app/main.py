@@ -74,7 +74,7 @@ async def handle_client(reader, writer):
                 response = f"+{found_value[0]}\r\n".encode()
                 writer.write(response)
             elif found_value[1] != -1 and found_value[1] < datetime.datetime.now():
-                print()
+                print(found_value)
                 response = f"+{found_value[0]}\r\n".encode()
                 writer.write(response)
             else:
