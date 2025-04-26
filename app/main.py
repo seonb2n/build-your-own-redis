@@ -77,7 +77,7 @@ async def handle_client(reader, writer):
                 response = f"+{found_value[0]}\r\n".encode()
                 writer.write(response)
             else:
-                writer.write(b"-1\r\n")
+                writer.write(b"$-1\r\n")
         else:
             # 지원하지 않는 명령어 또는 잘못된 형식
             writer.write(b"-ERR unknown command or invalid arguments\r\n")
