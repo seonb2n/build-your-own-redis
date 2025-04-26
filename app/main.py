@@ -70,9 +70,11 @@ async def handle_client(reader, writer):
             writer.write(b"+OK\r\n")
         elif command == "GET" and args:
             found_value = redis_map.get(args[0])
-            print(found_value)
-            if found_value[1] != -1 and found_value[1] < datetime.datetime.now():
-                response = f"+{redis_map.get(args[0])}\r\n".encode()
+            if found_value[1] == -1:
+                response = f"+{redis_map.get(found_value[0])}\r\n".encode()
+                writer.write(response)
+            elif found_value[1] != -1 and found_value[1] < datetime.datetime.now():
+                response = f"+{redis_map.get(found_value[0])}\r\n".encode()
                 writer.write(response)
             else:
                 writer.write(b"-1\r\n")
