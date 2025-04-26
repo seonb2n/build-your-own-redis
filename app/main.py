@@ -45,9 +45,10 @@ def parse_resp(data):
 
 
 async def handle_client(reader, writer):
+    redis_map = dict()
     while True:
         data = await reader.read(1024)
-        redis_map = dict()
+
         if not data:
             break
 
@@ -60,11 +61,9 @@ async def handle_client(reader, writer):
             writer.write(response)
         elif command == "SET" and args:
             redis_map[args[0]] = args[1]
-            print(f"set: {args[1]}")
             writer.write(b"+OK\r\n")
         elif command == "GET" and args:
-            print(f"get: {args[0]}")
-            response = f"+{redis_map[args[0]]}\r\n".encode()
+            response = f"+{redis_map.get(args[0])}\r\n".encode()
             writer.write(response)
         else:
             # 지원하지 않는 명령어 또는 잘못된 형식
