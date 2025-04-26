@@ -62,7 +62,7 @@ async def handle_client(reader, writer):
             response = f"+{args[0]}\r\n".encode()
             writer.write(response)
         elif command == "SET" and args:
-            if args[2] is not None and args[2] == 'px':
+            if len(args) > 2 and args[2] == 'px':
                 delta = datetime.timedelta(milliseconds=int(args[3]))
                 redis_map[args[0]] = (args[1], datetime.datetime.now() + delta)
             else :
