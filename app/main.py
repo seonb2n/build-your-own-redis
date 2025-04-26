@@ -1,6 +1,8 @@
 import socket  # noqa: F401
 import asyncio
 
+COMMANDS_WITH_ARGS = { "ECHO", "SET", "GET" }
+
 def extract_command(data):
     if not data:
         return None
@@ -20,25 +22,32 @@ def extract_command(data):
 def extract_value(data):
     try:
         lines = data.split(b"\r\n")
-        if not lines[0].startswith(b"*") or len(lines) < 5:
+        if not lines[0].startswith(b"*"):
             return None
 
-        if lines[3].startswith(b"$"):
-            return lines[4].decode()
-        return None
+        num_elements = int(lines[0][1:].decode())
+        if num_elements < 2:
+            return []
+
+        args = []
+        for i in range(3, len(lines), 2):
+            if i + 1 < len(lines) and lines[i].startswith(b"$"):
+                args.append(lines[i + 1].decode())
+        return args
     except Exception:
         return None
 
 
 def parse_resp(data):
     command = extract_command(data)
-    value = extract_value(data) if command == "ECHO" else None
+    value = extract_value(data) if command in COMMANDS_WITH_ARGS else []
     return command, value
 
 
 async def handle_client(reader, writer):
     while True:
         data = await reader.read(1024)
+        redis_map = dict()
         if not data:
             break
 
@@ -47,7 +56,13 @@ async def handle_client(reader, writer):
         if command == "PING":
             writer.write(b"+PONG\r\n")
         elif command == "ECHO" and args:
-            response = f"+{args}\r\n".encode()
+            response = f"+{args[0]}\r\n".encode()
+            writer.write(response)
+        elif command == "SET" and args:
+            redis_map[args[0]] = args[1]
+            writer.write(b"+OK\r\n")
+        elif command == "GET" and args:
+            response = f"+{redis_map[args[0]]}\r\n".encode()
             writer.write(response)
         else:
             # 지원하지 않는 명령어 또는 잘못된 형식
