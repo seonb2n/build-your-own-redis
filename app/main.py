@@ -92,6 +92,7 @@ class RedisStore:
             return None
 
         value, expiry = self.data[key]
+        print(expiry)
 
         # 만료 시간 확인
         if expiry != -1 and datetime.datetime.now() >= expiry:

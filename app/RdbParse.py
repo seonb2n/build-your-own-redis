@@ -89,7 +89,6 @@ class RdbParser:
 
             # 데이터 저장 (만료 시간 포함)
             if expiry and expiry > datetime.datetime.now().timestamp():
-                print(expiry)
                 self.data[key] = (value, datetime.datetime.fromtimestamp(expiry))
             else:
                 self.data[key] = (value, -1)
