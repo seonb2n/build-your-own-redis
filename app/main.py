@@ -1,7 +1,10 @@
+import os.path
 import socket  # noqa: F401
 import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple, Union, Any
+
+from app.RdbParse import RdbParser
 
 CRLF = b"\r\n"
 RESP_ARRAY_PREFIX = b"*"
@@ -17,6 +20,7 @@ class Commands:
     SET = "SET"
     GET = "GET"
     CONFIG = "CONFIG"
+    KEYS = "KEYS"
 
 
 class RespBuilder:
@@ -96,6 +100,21 @@ class RedisStore:
 
         return value
 
+    def get_all_keys(self) -> List[str]:
+        """만료되지 않은 모든 키 목록 반환"""
+        now = datetime.datetime.now()
+        result = []
+
+        for key, (_, expiry) in list(self.data.items()):
+            # 만료 시간 확인
+            if expiry == -1 or now < expiry:
+                result.append(key)
+            else:
+                # 만료된 키 삭제
+                del self.data[key]
+
+        return result
+
 class RedisServer:
     def __init__(self, dir_path="/tmp", dbfilename="dump.rdb"):
         self.store = RedisStore()
@@ -133,7 +152,8 @@ class RedisServer:
             Commands.ECHO: self.handle_echo,
             Commands.SET: self.handle_set,
             Commands.GET: self.handle_get,
-            Commands.CONFIG: self.handle_config
+            Commands.CONFIG: self.handle_config,
+            Commands.KEYS: self.handle_keys,
         }
 
         handler = handlers.get(command)
@@ -194,6 +214,34 @@ class RedisServer:
             self.builder.bulk_string(param_name),
             self.builder.bulk_string(self.config[param_name])
         ])
+
+    def handle_keys(self, args: List[str]) -> bytes:
+        if not args:
+            return self.builder.error("ERR wrong number of arguments for 'keys' command")
+
+        pattern = args[0]
+        if pattern != "*":
+            return self.builder.array([])
+
+        keys = self.store.get_all_keys()
+
+        resp_keys = [self.builder.bulk_string(key) for key in keys]
+        return self.builder.array(resp_keys)
+
+    def _load_rdb(self):
+        rdb_path = os.path.join(self.config["dir"], self.config["dbfilename"])
+        try:
+            rdb_parser = RdbParser(rdb_path)
+            data = rdb_parser.parse()
+
+            for key, (value, expiry) in data.items():
+                self.store.set(key, value, expiry)
+        except FileNotFoundError:
+            # 파일이 없으면 빈 데이터베이스로 처리
+            print(f"RDB file not found: {rdb_path}")
+        except Exception as e:
+            print(f"Error loading RDB file: {e}")
+
 
 
 async def main() -> None:
