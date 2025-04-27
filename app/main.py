@@ -16,6 +16,7 @@ class Commands:
     ECHO = "ECHO"
     SET = "SET"
     GET = "GET"
+    CONFIG = "CONFIG"
 
 
 class RespBuilder:
@@ -30,6 +31,18 @@ class RespBuilder:
     @staticmethod
     def null() -> bytes:
         return b"$-1\r\n"
+
+    @staticmethod
+    def bulk_string(value: str) -> bytes:
+        encoded_value = value.encode()
+        return f"{RESP_BULK_STRING_PREFIX.decode()}{len(encoded_value)}{CRLF.decode()}{value}{CRLF.decode()}".encode()
+
+    @staticmethod
+    def array(items: List[bytes]) -> bytes:
+        result = f"{RESP_ARRAY_PREFIX.decode()}{len(items)}{CRLF.decode()}".encode()
+        for item in items:
+            result += item
+        return result
 
 
 class RespParser:
@@ -84,10 +97,14 @@ class RedisStore:
         return value
 
 class RedisServer:
-    def __init__(self):
+    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb"):
         self.store = RedisStore()
         self.parser = RespParser()
         self.builder = RespBuilder()
+        self.config = {
+            "dir": dir_path,
+            "dbfilename": dbfilename
+        }
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -115,7 +132,8 @@ class RedisServer:
             Commands.PING: self.handle_ping,
             Commands.ECHO: self.handle_echo,
             Commands.SET: self.handle_set,
-            Commands.GET: self.handle_get
+            Commands.GET: self.handle_get,
+            Commands.CONFIG: self.handle_config
         }
 
         handler = handlers.get(command)
@@ -160,10 +178,35 @@ class RedisServer:
 
         return self.builder.simple_string(value)
 
+    def handle_config(self, args: List[str]) -> bytes:
+        if len(args) < 2:
+            return self.builder.error("ERR wrong number of arguments for 'config' command")\
+
+        subcommand = args[0].upper()
+        if subcommand != "GET":
+            return self.builder.error("ERR unknown subcommand for CONFIG")
+
+        param_name = args[1]
+        if param_name not in self.config:
+            return self.builder.array([])
+
+        return self.builder.array([
+            self.builder.bulk_string(param_name),
+            self.builder.bulk_string(self.config[param_name])
+        ])
+
 
 async def main() -> None:
-    print("Redis server starting on localhost:6379")
-    server = RedisServer()
+    # Parse command line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='Redis Server')
+    parser.add_argument('--dir', default='/tmp', help='Directory for RDB file')
+    parser.add_argument('--dbfilename', default='dump.rdb', help='RDB filename')
+    args = parser.parse_args()
+
+    print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}")
+
+    server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename)
     redis_server = await asyncio.start_server(
         server.handle_client, "localhost", 6379, reuse_port=True
     )
