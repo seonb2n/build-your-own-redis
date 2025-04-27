@@ -124,6 +124,7 @@ class RedisServer:
             "dir": dir_path,
             "dbfilename": dbfilename
         }
+        self._load_rdb()
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
