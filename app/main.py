@@ -252,13 +252,14 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description='Redis Server')
     parser.add_argument('--dir', default='/tmp', help='Directory for RDB file')
     parser.add_argument('--dbfilename', default='dump.rdb', help='RDB filename')
+    parser.add_argument('--port', default=6379, type=int, help='Redis server port')
     args = parser.parse_args()
 
-    print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}")
+    print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}")
 
     server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename)
     redis_server = await asyncio.start_server(
-        server.handle_client, "localhost", 6379, reuse_port=True
+        server.handle_client, "localhost", args.port, reuse_port=True
     )
 
     async with redis_server:
