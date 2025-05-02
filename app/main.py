@@ -4,7 +4,6 @@ import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple, Union, Any
 
-
 from app.RdbParse import RdbParser
 
 CRLF = b"\r\n"
@@ -82,6 +81,7 @@ class RespParser:
         except Exception:
             return None, []
 
+
 class RedisStore:
     def __init__(self):
         self.data: Dict[str, Tuple[str, Union[int, datetime.datetime]]] = {}
@@ -118,8 +118,9 @@ class RedisStore:
 
         return result
 
+
 class RedisServer:
-    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb", replicaof=False):
+    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb", replicaof: Optional[str] = None):
         self.store = RedisStore()
         self.parser = RespParser()
         self.builder = RespBuilder()
@@ -130,7 +131,21 @@ class RedisServer:
             "master_replid": "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
         }
         self.master_repl_offset = 0
+        self.master_host: Optional[str] = None
+        self.master_port: Optional[int] = None
+        self._replicaof = replicaof
+
         self._load_rdb()
+
+    async def async_init(self):
+        print("async_init called")
+        if self._replicaof:
+            try:
+                self.master_host, port_str = self._replicaof.split()
+                self.master_port = int(port_str)
+                await self.connect_to_master()
+            except ValueError:
+                raise ValueError("Invalid replicaof format. Expected 'host port'.")
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -149,6 +164,24 @@ class RedisServer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+    async def connect_to_master(self):
+        if not (self.master_host and self.master_port):
+            return
+
+        print(f"start connect to master {self.master_host}:{self.master_port}")
+        try:
+            reader, writer = await asyncio.open_connection(self.master_host, self.master_port)
+            ping_command = self.builder.array([self.builder.bulk_string("PING")])
+            writer.write(ping_command)
+            await writer.drain()
+
+            response = await reader.read(1024)
+
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            print(f"Failed to send PING to master: {e}")
 
     def handle_command(self, command: Optional[str], args: List[str]) -> bytes:
         if command is None:
@@ -208,7 +241,7 @@ class RedisServer:
 
     def handle_config(self, args: List[str]) -> bytes:
         if len(args) < 2:
-            return self.builder.error("ERR wrong number of arguments for 'config' command")\
+            return self.builder.error("ERR wrong number of arguments for 'config' command")
 
         subcommand = args[0].upper()
         if subcommand != "GET":
@@ -231,7 +264,6 @@ class RedisServer:
         response = f"{replication}\r\n{master_replid}\r\n{master_repl_offset}"
 
         return self.builder.bulk_string(response)
-
 
     def handle_keys(self, args: List[str]) -> bytes:
         if not args:
@@ -261,7 +293,6 @@ class RedisServer:
             print(f"Error loading RDB file: {e}")
 
 
-
 async def main() -> None:
     # Parse command line arguments
     import argparse
@@ -269,12 +300,13 @@ async def main() -> None:
     parser.add_argument('--dir', default='/tmp', help='Directory for RDB file')
     parser.add_argument('--dbfilename', default='dump.rdb', help='RDB filename')
     parser.add_argument('--port', default=6379, type=int, help='Redis server port')
-    parser.add_argument('--replicaof', default=False, help='Redis server replicaof')
+    parser.add_argument('--replicaof', help='Redis server replicaof')
     args = parser.parse_args()
 
     print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}, replicaof: {args.replicaof}")
 
     server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename, replicaof=args.replicaof)
+    await server.async_init()
     redis_server = await asyncio.start_server(
         server.handle_client, "localhost", args.port, reuse_port=True
     )
