@@ -21,6 +21,7 @@ class Commands:
     GET = "GET"
     CONFIG = "CONFIG"
     KEYS = "KEYS"
+    INFO = "INFO"
 
 
 class RespBuilder:
@@ -156,6 +157,7 @@ class RedisServer:
             Commands.GET: self.handle_get,
             Commands.CONFIG: self.handle_config,
             Commands.KEYS: self.handle_keys,
+            Commands.INFO: self.handle_info,
         }
 
         handler = handlers.get(command)
@@ -216,6 +218,12 @@ class RedisServer:
             self.builder.bulk_string(param_name),
             self.builder.bulk_string(self.config[param_name])
         ])
+
+    def handle_info(self, args: List[str]) -> bytes:
+        replication = "role:master"
+
+        return self.builder.bulk_string(replication)
+
 
     def handle_keys(self, args: List[str]) -> bytes:
         if not args:
