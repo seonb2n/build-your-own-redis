@@ -120,7 +120,7 @@ class RedisStore:
 
 
 class RedisServer:
-    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb", replicaof: Optional[str] = None):
+    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb", replicaof: Optional[str] = None, port: int = 6379):
         self.store = RedisStore()
         self.parser = RespParser()
         self.builder = RespBuilder()
@@ -133,12 +133,12 @@ class RedisServer:
         self.master_repl_offset = 0
         self.master_host: Optional[str] = None
         self.master_port: Optional[int] = None
+        self.port = port
         self._replicaof = replicaof
 
         self._load_rdb()
 
     async def async_init(self):
-        print("async_init called")
         if self._replicaof:
             try:
                 self.master_host, port_str = self._replicaof.split()
@@ -168,12 +168,34 @@ class RedisServer:
     async def connect_to_master(self):
         if not (self.master_host and self.master_port):
             return
-
-        print(f"start connect to master {self.master_host}:{self.master_port}")
         try:
             reader, writer = await asyncio.open_connection(self.master_host, self.master_port)
+            # step 1: Send PING
             ping_command = self.builder.array([self.builder.bulk_string("PING")])
             writer.write(ping_command)
+            await writer.drain()
+
+            response = await reader.read(1024)
+
+            # step 2: send REPLCONF
+            replconf_port = self.builder.array(
+                [
+                    self.builder.bulk_string("REPLCONF"),
+                    self.builder.bulk_string("listening-port"),
+                    self.builder.bulk_string(str(self.port))
+                ]
+            )
+            writer.write(replconf_port)
+            await writer.drain()
+            response = await reader.read(1024)
+
+            # Step 3: Send REPLCONF capa psync2
+            replconf_capa = self.builder.array([
+                self.builder.bulk_string("REPLCONF"),
+                self.builder.bulk_string("capa"),
+                self.builder.bulk_string("psync2")
+            ])
+            writer.write(replconf_capa)
             await writer.drain()
 
             response = await reader.read(1024)
@@ -305,7 +327,7 @@ async def main() -> None:
 
     print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}, replicaof: {args.replicaof}")
 
-    server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename, replicaof=args.replicaof)
+    server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename, replicaof=args.replicaof, port=args.port)
     await server.async_init()
     redis_server = await asyncio.start_server(
         server.handle_client, "localhost", args.port, reuse_port=True
