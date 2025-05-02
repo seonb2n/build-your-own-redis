@@ -4,6 +4,7 @@ import asyncio
 import datetime
 from typing import Dict, List, Optional, Tuple, Union, Any
 
+
 from app.RdbParse import RdbParser
 
 CRLF = b"\r\n"
@@ -118,13 +119,14 @@ class RedisStore:
         return result
 
 class RedisServer:
-    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb"):
+    def __init__(self, dir_path="/tmp", dbfilename="dump.rdb", replicaof=False):
         self.store = RedisStore()
         self.parser = RespParser()
         self.builder = RespBuilder()
         self.config = {
             "dir": dir_path,
-            "dbfilename": dbfilename
+            "dbfilename": dbfilename,
+            "replicaof": "slave" if replicaof else "master",
         }
         self._load_rdb()
 
@@ -220,7 +222,7 @@ class RedisServer:
         ])
 
     def handle_info(self, args: List[str]) -> bytes:
-        replication = "role:master"
+        replication = f"role:{self.config["replicaof"]}"
 
         return self.builder.bulk_string(replication)
 
@@ -261,11 +263,12 @@ async def main() -> None:
     parser.add_argument('--dir', default='/tmp', help='Directory for RDB file')
     parser.add_argument('--dbfilename', default='dump.rdb', help='RDB filename')
     parser.add_argument('--port', default=6379, type=int, help='Redis server port')
+    parser.add_argument('--replicaof', default=False, help='Redis server replicaof')
     args = parser.parse_args()
 
-    print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}")
+    print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}, replicaof: {args.replicaof}")
 
-    server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename)
+    server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename, replicaof=args.replicaof)
     redis_server = await asyncio.start_server(
         server.handle_client, "localhost", args.port, reuse_port=True
     )
