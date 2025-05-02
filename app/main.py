@@ -200,6 +200,17 @@ class RedisServer:
 
             response = await reader.read(1024)
 
+            # Step 4: Send PSYNC
+            psync = self.builder.array([
+                self.builder.bulk_string("psync"),
+                self.builder.bulk_string("?"),
+                self.builder.bulk_string("-1")
+            ])
+            writer.write(psync)
+            await writer.drain()
+
+            response = await reader.read(1024)
+
             writer.close()
             await writer.wait_closed()
         except Exception as e:
