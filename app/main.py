@@ -23,6 +23,7 @@ class Commands:
     KEYS = "KEYS"
     INFO = "INFO"
     REPLCONF = "REPLCONF"
+    PSYNC = "PSYNC"
 
 
 class RespBuilder:
@@ -230,6 +231,7 @@ class RedisServer:
             Commands.KEYS: self.handle_keys,
             Commands.INFO: self.handle_info,
             Commands.REPLCONF: self.handle_replconf,
+            Commands.PSYNC: self.handle_psync,
         }
 
         handler = handlers.get(command)
@@ -315,6 +317,10 @@ class RedisServer:
 
     def handle_replconf(self, args: List[str]) -> bytes:
         response = "OK"
+        return self.builder.simple_string(response)
+
+    def handle_psync(self, args: List[str]) -> bytes:
+        response = f"FULLRESYNC {self.config["master_replid"]} {self.master_repl_offset}"
         return self.builder.simple_string(response)
 
     def _load_rdb(self):
