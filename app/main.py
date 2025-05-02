@@ -127,7 +127,9 @@ class RedisServer:
             "dir": dir_path,
             "dbfilename": dbfilename,
             "replicaof": "slave" if replicaof else "master",
+            "master_replid": "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb",
         }
+        self.master_repl_offset = 0
         self._load_rdb()
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -222,9 +224,13 @@ class RedisServer:
         ])
 
     def handle_info(self, args: List[str]) -> bytes:
-        replication = f"role:{self.config["replicaof"]}"
+        replication = f"role:{self.config['replicaof']}"
+        master_replid = f"master_replid:{self.config['master_replid']}"
+        master_repl_offset = f"master_repl_offset:{self.master_repl_offset}"
 
-        return self.builder.bulk_string(replication)
+        response = f"{replication}\r\n{master_replid}\r\n{master_repl_offset}"
+
+        return self.builder.bulk_string(response)
 
 
     def handle_keys(self, args: List[str]) -> bytes:
