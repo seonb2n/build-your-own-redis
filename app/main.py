@@ -22,6 +22,7 @@ class Commands:
     CONFIG = "CONFIG"
     KEYS = "KEYS"
     INFO = "INFO"
+    REPLCONF = "REPLCONF"
 
 
 class RespBuilder:
@@ -228,6 +229,7 @@ class RedisServer:
             Commands.CONFIG: self.handle_config,
             Commands.KEYS: self.handle_keys,
             Commands.INFO: self.handle_info,
+            Commands.REPLCONF: self.handle_replconf,
         }
 
         handler = handlers.get(command)
@@ -310,6 +312,10 @@ class RedisServer:
 
         resp_keys = [self.builder.bulk_string(key) for key in keys]
         return self.builder.array(resp_keys)
+
+    def handle_replconf(self, args: List[str]) -> bytes:
+        response = "OK"
+        return self.builder.simple_string(response)
 
     def _load_rdb(self):
         rdb_path = os.path.join(self.config["dir"], self.config["dbfilename"])
