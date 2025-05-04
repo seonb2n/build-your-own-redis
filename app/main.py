@@ -25,6 +25,8 @@ class Commands:
     REPLCONF = "REPLCONF"
     PSYNC = "PSYNC"
 
+    WRITE_COMMANDS = {"SET", "DEL"}
+
 
 class RespBuilder:
     @staticmethod
@@ -137,7 +139,7 @@ class RedisServer:
         self.master_port: Optional[int] = None
         self.port = port
         self._replicaof = replicaof
-
+        self.replicas: List[asyncio.StreamWriter] = []
         self._load_rdb()
 
     async def async_init(self):
@@ -157,7 +159,7 @@ class RedisServer:
                     break
 
                 command, args = self.parser.parse(data)
-                response = self.handle_command(command, args)
+                response = self.handle_command(command, args, writer)
 
                 writer.write(response)
                 await writer.drain()
@@ -218,7 +220,7 @@ class RedisServer:
         except Exception as e:
             print(f"Failed to send PING to master: {e}")
 
-    def handle_command(self, command: Optional[str], args: List[str]) -> bytes:
+    def handle_command(self, command: Optional[str], args: List[str], writer) -> bytes:
         if command is None:
             return self.builder.error("ERR protocol error")
 
@@ -231,12 +233,17 @@ class RedisServer:
             Commands.KEYS: self.handle_keys,
             Commands.INFO: self.handle_info,
             Commands.REPLCONF: self.handle_replconf,
-            Commands.PSYNC: self.handle_psync,
+            Commands.PSYNC: lambda args: self.handle_psync(args, writer = writer),
         }
 
         handler = handlers.get(command)
         if handler:
-            return handler(args)
+            response = handler(args)
+            if command in Commands.WRITE_COMMANDS:
+                # Run propagation asynchronously
+                asyncio.create_task(self.propagate_command(command, args))
+
+            return response
 
         return self.builder.error("ERR unknown command or invalid arguments")
 
@@ -319,7 +326,7 @@ class RedisServer:
         response = "OK"
         return self.builder.simple_string(response)
 
-    def handle_psync(self, args: List[str]) -> bytes:
+    def handle_psync(self, args: List[str], writer: asyncio.StreamWriter) -> bytes:
         # Step 1: Construct FULLRESYNC response
         response = f"FULLRESYNC {self.config['master_replid']} {self.master_repl_offset}"
         fullresync_response = self.builder.simple_string(response)
@@ -328,7 +335,7 @@ class RedisServer:
         empty_rdb_hex = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
         empty_rdb_bytes = bytes.fromhex(empty_rdb_hex)
         rdb_response = f"${len(empty_rdb_bytes)}\r\n".encode() + empty_rdb_bytes
-
+        self.replicas.append(writer)
         return fullresync_response + rdb_response
 
     def _load_rdb(self):
@@ -344,6 +351,23 @@ class RedisServer:
             print(f"RDB file not found: {rdb_path}")
         except Exception as e:
             print(f"Error loading RDB file: {e}")
+
+    async def propagate_command(self, command:str, args:List[str]) -> None:
+        if not self.replicas:
+            return
+
+        resp_items = [
+                         self.builder.bulk_string(command)
+                     ] + [self.builder.bulk_string(arg) for arg in args]
+        command_array = self.builder.array(resp_items)
+
+        for replica in self.replicas:
+            try:
+                replica.write(command_array)
+                await replica.drain()
+            except Exception as e:
+                print(f"Error writing to replica: {e}")
+                self.replicas.remove(replica)
 
 
 async def main() -> None:
