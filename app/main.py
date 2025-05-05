@@ -264,6 +264,7 @@ class RedisServer:
 
                         if rdb_length > 0:
                             rdb_content = await reader.readexactly(rdb_length)
+                            print(f"Sync Completed: {rdb_content}")
                         elif rdb_length == 0:
                             print("Received empty RDB file (length 0).")
                         else:
