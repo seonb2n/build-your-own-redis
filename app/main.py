@@ -159,7 +159,7 @@ class RedisServer:
                     break
 
                 command, args = self.parser.parse(data)
-                response = self.handle_command(command, args, writer)
+                response = self.handle_command(command, args, writer, from_master=False)
 
                 writer.write(response)
                 await writer.drain()
@@ -168,6 +168,45 @@ class RedisServer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+    def parse_command_from_buffer(self, buffer: bytes) -> Tuple[Optional[str], List[str], bytes]:
+        try:
+            # Find the first complete command
+            if not buffer.startswith(RESP_ARRAY_PREFIX):
+                return None, [], buffer
+
+            # Find the end of the array prefix line
+            array_end = buffer.find(CRLF)
+            if array_end == -1:
+                return None, [], buffer
+
+            num_elements = int(buffer[1:array_end].decode())
+            if num_elements < 1:
+                return None, [], buffer[array_end + 2:]
+
+            # Parse the command and arguments
+            pos = array_end + 2
+            args = []
+            for _ in range(num_elements):
+                if pos >= len(buffer):
+                    return None, [], buffer
+                if not buffer[pos:pos + 1] == RESP_BULK_STRING_PREFIX:
+                    return None, [], buffer
+                bulk_end = buffer.find(CRLF, pos)
+                if bulk_end == -1:
+                    return None, [], buffer
+                length = int(buffer[pos + 1:bulk_end].decode())
+                pos = bulk_end + 2
+                if pos + length + 2 > len(buffer):
+                    return None, [], buffer
+                value = buffer[pos:pos + length].decode()
+                args.append(value)
+                pos += length + 2  # Skip value and trailing CRLF
+
+            command = args[0].upper() if args else None
+            return command, args[1:], buffer[pos:]
+        except Exception:
+            return None, [], buffer
 
     async def connect_to_master(self):
         if not (self.master_host and self.master_port):
@@ -213,14 +252,38 @@ class RedisServer:
             writer.write(psync)
             await writer.drain()
 
-            response = await reader.read(1024)
+            # Step 5: Read FULLRESYNC response and RDB file
+            rdb_data = await reader.readuntil(b"\r\n")
+            if rdb_data.startswith(b"$"):
+                rdb_length = int(rdb_data[1:-2].decode())
+                if rdb_length > 0:
+                    rdb_content = await reader.readexactly(rdb_length)
+                    # Optionally process RDB content (for now, assume empty RDB)
+                    self._load_rdb_from_bytes(rdb_content)
 
-            writer.close()
-            await writer.wait_closed()
+            # Step 6: Continuously read propagated commands
+            buffer = b""
+            while True:
+                data = await reader.read(1024)
+                if not data:
+                    break
+                buffer += data
+                while buffer:
+                    command, args, new_buffer = self.parse_command_from_buffer(buffer)
+                    if command is None:
+                        break  # Incomplete command, wait for more data
+                    buffer = new_buffer
+                    # Process command without sending response
+                    if command in Commands.WRITE_COMMANDS:
+                        self.handle_command(command, args, from_master=True)
+
         except Exception as e:
             print(f"Failed to send PING to master: {e}")
 
-    def handle_command(self, command: Optional[str], args: List[str], writer) -> bytes:
+    def _load_rdb_from_bytes(self, rdb_content: bytes) -> None:
+        pass
+
+    def handle_command(self, command: Optional[str], args: List[str], writer = None, from_master = False) -> bytes:
         if command is None:
             return self.builder.error("ERR protocol error")
 
@@ -239,7 +302,7 @@ class RedisServer:
         handler = handlers.get(command)
         if handler:
             response = handler(args)
-            if command in Commands.WRITE_COMMANDS:
+            if command in Commands.WRITE_COMMANDS and not from_master:
                 # Run propagation asynchronously
                 asyncio.create_task(self.propagate_command(command, args))
 
