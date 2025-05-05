@@ -253,16 +253,39 @@ class RedisServer:
             await writer.drain()
 
             # Step 5: Read FULLRESYNC response and RDB file
-            response = await reader.read(1024)
-            if b"FULLRESYNC" in response:
-                # Read RDB file (bulk string)
-                rdb_data = await reader.readuntil(b"\r\n")
-                if rdb_data.startswith(b"$"):
-                    rdb_length = int(rdb_data[1:-2].decode())
-                    if rdb_length > 0:
-                        rdb_content = await reader.readexactly(rdb_length)
-                        # Optionally process RDB content (for now, assume empty RDB)
-                        self._load_rdb_from_bytes(rdb_content)
+            fullresync_line = await reader.readline()
+            print(f"Received from master: {fullresync_line}")
+
+            if fullresync_line.startswith(b"+FULLRESYNC"):
+                rdb_header = await reader.readline()
+                if rdb_header.startswith(b"$"):
+                    try:
+                        rdb_length = int(rdb_header[1:-2].decode())
+
+                        if rdb_length > 0:
+                            rdb_content = await reader.readexactly(rdb_length)
+                        elif rdb_length == 0:
+                            print("Received empty RDB file (length 0).")
+                        else:
+                            print(f"Warning: Received unexpected RDB length: {rdb_length}")
+
+                    except ValueError as e:
+                        print(f"Error parsing RDB length: {e}, Header: {rdb_header}")
+                    except Exception as e:
+                        print(f"Error processing RDB file: {e}")
+
+                else:
+                    print(f"Error: Expected RDB bulk string starting with '$', but got: {rdb_header}")
+                    writer.close()
+                    await writer.wait_closed()
+                    return
+
+            else:
+                print(f"Error: Expected FULLRESYNC, but got: {fullresync_line}")
+                writer.close()
+                await writer.wait_closed()
+                return
+
 
             # Step 6: Continuously read propagated commands
             buffer = b""
@@ -274,9 +297,8 @@ class RedisServer:
                 while buffer:
                     command, args, new_buffer = self.parse_command_from_buffer(buffer)
                     if command is None:
-                        break  # Incomplete command, wait for more data
+                        break
                     buffer = new_buffer
-                    # Process command without sending response
                     if command in Commands.WRITE_COMMANDS:
                         self.handle_command(command, args, from_master=True)
 
