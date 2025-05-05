@@ -253,13 +253,16 @@ class RedisServer:
             await writer.drain()
 
             # Step 5: Read FULLRESYNC response and RDB file
-            rdb_data = await reader.readuntil(b"\r\n")
-            if rdb_data.startswith(b"$"):
-                rdb_length = int(rdb_data[1:-2].decode())
-                if rdb_length > 0:
-                    rdb_content = await reader.readexactly(rdb_length)
-                    # Optionally process RDB content (for now, assume empty RDB)
-                    self._load_rdb_from_bytes(rdb_content)
+            response = await reader.read(1024)
+            if b"FULLRESYNC" in response:
+                # Read RDB file (bulk string)
+                rdb_data = await reader.readuntil(b"\r\n")
+                if rdb_data.startswith(b"$"):
+                    rdb_length = int(rdb_data[1:-2].decode())
+                    if rdb_length > 0:
+                        rdb_content = await reader.readexactly(rdb_length)
+                        # Optionally process RDB content (for now, assume empty RDB)
+                        self._load_rdb_from_bytes(rdb_content)
 
             # Step 6: Continuously read propagated commands
             buffer = b""
