@@ -472,10 +472,11 @@ async def main() -> None:
     print(f"Using dir: {args.dir}, dbfilename: {args.dbfilename}, port: {args.port}, replicaof: {args.replicaof}")
 
     server = RedisServer(dir_path=args.dir, dbfilename=args.dbfilename, replicaof=args.replicaof, port=args.port)
-    await server.async_init()
     redis_server = await asyncio.start_server(
         server.handle_client, "localhost", args.port, reuse_port=True
     )
+
+    await server.async_init()
 
     async with redis_server:
         await redis_server.serve_forever()
