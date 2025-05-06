@@ -204,6 +204,12 @@ class RedisServer:
                 pos += length + 2  # Skip value and trailing CRLF
 
             command = args[0].upper() if args else None
+
+            command_size = pos
+
+            if not (command == Commands.REPLCONF and len(args) > 1 and args[1].upper() == 'GETACK'):
+                self.master_repl_offset += command_size
+
             return command, args[1:], buffer[pos:]
         except Exception:
             return None, [], buffer
@@ -417,12 +423,11 @@ class RedisServer:
 
     def handle_replconf(self, args: List[str]) -> bytes:
         subcommand = args[0].upper()
-        print(f"receive replconf: {subcommand}")
         if subcommand == "GETACK":
             return self.builder.array([
                 self.builder.bulk_string("REPLCONF"),
                 self.builder.bulk_string("ACK"),
-                self.builder.bulk_string("0")
+                self.builder.bulk_string(str(self.master_repl_offset))
             ])
         return self.builder.simple_string("OK")
 
