@@ -207,7 +207,7 @@ class RedisServer:
 
             command_size = pos
 
-            if not (command == Commands.REPLCONF and len(args) > 1 and args[1].upper() == 'GETACK'):
+            if not (command == Commands.REPLCONF and len(args) > 0 and args[0].upper() == 'GETACK'):
                 self.master_repl_offset += command_size
                 print(f"command size + {command_size}")
 
