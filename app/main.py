@@ -169,7 +169,7 @@ class RedisServer:
             writer.close()
             await writer.wait_closed()
 
-    def parse_command_from_buffer(self, buffer: bytes) -> Tuple[Optional[str], List[str], bytes]:
+    def parse_command_from_buffer(self, buffer: bytes) -> Tuple[Optional[str], List[str], bytes, int]:
         try:
             # Find the first complete command
             if not buffer.startswith(RESP_ARRAY_PREFIX):
@@ -205,15 +205,9 @@ class RedisServer:
 
             command = args[0].upper() if args else None
 
-            command_size = pos
-
-            if not (command == Commands.REPLCONF and len(args) > 0 and args[0].upper() == 'GETACK'):
-                self.master_repl_offset += command_size
-                print(f"command size + {command_size}")
-
-            return command, args[1:], buffer[pos:]
+            return command, args[1:], buffer[pos:], pos
         except Exception:
-            return None, [], buffer
+            return None, [], buffer, 0
 
     async def connect_to_master(self):
         if not (self.master_host and self.master_port):
@@ -303,7 +297,7 @@ class RedisServer:
                     break
                 buffer += data
                 while buffer:
-                    command, args, new_buffer = self.parse_command_from_buffer(buffer)
+                    command, args, new_buffer, byte_size = self.parse_command_from_buffer(buffer)
                     if command is None:
                         break
                     buffer = new_buffer
@@ -313,6 +307,7 @@ class RedisServer:
                         response = self.handle_command(command, args, writer=writer, from_master=True)
                         writer.write(response)
                         await writer.drain()
+                    self.master_repl_offset += byte_size
 
         except Exception as e:
             print(f"Failed to send PING to master: {e}")
