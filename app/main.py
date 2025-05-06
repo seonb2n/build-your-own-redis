@@ -302,6 +302,9 @@ class RedisServer:
                     buffer = new_buffer
                     if command in Commands.WRITE_COMMANDS:
                         self.handle_command(command, args, from_master=True)
+                    elif command == Commands.REPLCONF and args and args[0].upper() == 'GETACK':
+                        writer.write(response)
+                        await writer.drain()
 
         except Exception as e:
             print(f"Failed to send PING to master: {e}")
@@ -412,8 +415,16 @@ class RedisServer:
         return self.builder.array(resp_keys)
 
     def handle_replconf(self, args: List[str]) -> bytes:
-        response = "OK"
-        return self.builder.simple_string(response)
+        subcommand = args[0].upper()
+        if subcommand == "GETACK":
+            return self.builder.array([
+                self.builder.bulk_string("REPLCONF"),
+                self.builder.bulk_string("ACK"),
+                self.builder.bulk_string("0")
+            ])
+        return self.builder.array([
+            self.builder.bulk_string("OK")
+        ])
 
     def handle_psync(self, args: List[str], writer: asyncio.StreamWriter) -> bytes:
         # Step 1: Construct FULLRESYNC response
