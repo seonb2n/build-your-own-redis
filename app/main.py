@@ -303,6 +303,7 @@ class RedisServer:
                     if command in Commands.WRITE_COMMANDS:
                         self.handle_command(command, args, from_master=True)
                     elif command == Commands.REPLCONF and args and args[0].upper() == 'GETACK':
+                        response = self.handle_command(command, args, writer=writer, from_master=True)
                         writer.write(response)
                         await writer.drain()
 
