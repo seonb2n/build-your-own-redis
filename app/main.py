@@ -424,9 +424,7 @@ class RedisServer:
                 self.builder.bulk_string("ACK"),
                 self.builder.bulk_string("0")
             ])
-        return self.builder.array([
-            self.builder.bulk_string("OK")
-        ])
+        return self.builder.simple_string("OK")
 
     def handle_psync(self, args: List[str], writer: asyncio.StreamWriter) -> bytes:
         # Step 1: Construct FULLRESYNC response
