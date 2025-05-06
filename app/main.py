@@ -416,6 +416,7 @@ class RedisServer:
 
     def handle_replconf(self, args: List[str]) -> bytes:
         subcommand = args[0].upper()
+        print(f"receive replconf: {subcommand}")
         if subcommand == "GETACK":
             return self.builder.array([
                 self.builder.bulk_string("REPLCONF"),
