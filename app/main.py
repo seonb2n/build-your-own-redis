@@ -344,11 +344,11 @@ class RedisServer:
 
         return self.builder.error("ERR unknown command or invalid arguments")
 
-    def handle_wait(self) -> bytes:
-        return b":0\r\n"
-
     def handle_ping(self, args: List[str]) -> bytes:
         return self.builder.simple_string("PONG")
+
+    def handle_wait(self, args: List[str]) -> bytes:
+        return b":0\r\n"
 
     def handle_echo(self, args: List[str]) -> bytes:
         if not args:
