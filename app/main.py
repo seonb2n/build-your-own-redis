@@ -24,6 +24,7 @@ class Commands:
     INFO = "INFO"
     REPLCONF = "REPLCONF"
     PSYNC = "PSYNC"
+    WAIT = "WAIT"
 
     WRITE_COMMANDS = {"SET", "DEL"}
 
@@ -329,6 +330,7 @@ class RedisServer:
             Commands.INFO: self.handle_info,
             Commands.REPLCONF: self.handle_replconf,
             Commands.PSYNC: lambda args: self.handle_psync(args, writer = writer),
+            Commands.WAIT: self.handle_wait,
         }
 
         handler = handlers.get(command)
@@ -341,6 +343,9 @@ class RedisServer:
             return response
 
         return self.builder.error("ERR unknown command or invalid arguments")
+
+    def handle_wait(self) -> bytes:
+        return self.builder.bulk_string("0")
 
     def handle_ping(self, args: List[str]) -> bytes:
         return self.builder.simple_string("PONG")
