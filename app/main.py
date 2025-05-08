@@ -35,6 +35,10 @@ class RespBuilder:
         return f"{RESP_SIMPLE_STRING_PREFIX.decode()}{value}{CRLF.decode()}".encode()
 
     @staticmethod
+    def integer(value: int) -> bytes:
+        return f":{value}{CRLF.decode()}".encode()
+
+    @staticmethod
     def error(message: str) -> bytes:
         return f"{RESP_ERROR_PREFIX.decode()}{message}{CRLF.decode()}".encode()
 
@@ -348,7 +352,7 @@ class RedisServer:
         return self.builder.simple_string("PONG")
 
     def handle_wait(self, args: List[str]) -> bytes:
-        return b":0\r\n"
+        return self.builder.integer(7)
 
     def handle_echo(self, args: List[str]) -> bytes:
         if not args:
