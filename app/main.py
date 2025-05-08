@@ -352,7 +352,7 @@ class RedisServer:
         return self.builder.simple_string("PONG")
 
     def handle_wait(self, args: List[str]) -> bytes:
-        return self.builder.integer(7)
+        return self.builder.integer(len(self.replicas))
 
     def handle_echo(self, args: List[str]) -> bytes:
         if not args:
