@@ -311,18 +311,16 @@ class RedisServer:
                         break
                     buffer = new_buffer
                     if command in Commands.WRITE_COMMANDS:
-                        self.handle_command(command, args, from_master=True)
+                        # Just execute the command, don't send a response back to the master
+                        await self.handle_command(command, args, from_master=True)
                     elif command == Commands.REPLCONF and args and args[0].upper() == 'GETACK':
-                        response = self.handle_command(command, args, writer=writer, from_master=True)
+                        response = await self.handle_command(command, args, writer=writer, from_master=True)
                         writer.write(response)
                         await writer.drain()
                     self.master_repl_offset += byte_size
 
         except Exception as e:
             print(f"Failed to send PING to master: {e}")
-
-    def _load_rdb_from_bytes(self, rdb_content: bytes) -> None:
-        pass
 
     async def handle_command(self, command: Optional[str], args: List[str], writer = None, from_master = False) -> bytes:
         if command is None:
@@ -497,34 +495,26 @@ class RedisServer:
 
         return fullresync_response + rdb_response
 
-    def _load_rdb(self):
-        rdb_path = os.path.join(self.config["dir"], self.config["dbfilename"])
-        try:
-            rdb_parser = RdbParser(rdb_path)
-            data = rdb_parser.parse()
-
-            for key, (value, expiry) in data.items():
-                self.store.set(key, value, expiry)
-        except FileNotFoundError:
-            # 파일이 없으면 빈 데이터베이스로 처리
-            print(f"RDB file not found: {rdb_path}")
-        except Exception as e:
-            print(f"Error loading RDB file: {e}")
+    def _load_rdb_from_bytes(self, rdb_content: bytes) -> None:
+        pass
 
     async def propagate_command(self, command:str, args:List[str]) -> None:
         if not self.replicas:
             return
 
+        # Create the command array to send to replicas
         resp_items = [
-                         self.builder.bulk_string(command)
-                     ] + [self.builder.bulk_string(arg) for arg in args]
+                     self.builder.bulk_string(command)
+                 ] + [self.builder.bulk_string(arg) for arg in args]
         command_array = self.builder.array(resp_items)
 
         # Increment the master replication offset
         self.master_repl_offset += len(command_array)
 
-        for replica in self.replicas:
+        # Send the command to each replica
+        for replica in list(self.replicas):  # Make a copy of the list to avoid modification during iteration
             try:
+                # Send the actual command (SET, GET, etc.)
                 replica.write(command_array)
                 await replica.drain()
 
@@ -538,8 +528,23 @@ class RedisServer:
                 await replica.drain()
             except Exception as e:
                 print(f"Error writing to replica: {e}")
-                self.replicas.remove(replica)
+                if replica in self.replicas:  # Check if replica is still in the list
+                    self.replicas.remove(replica)
 
+
+    def _load_rdb(self):
+        rdb_path = os.path.join(self.config["dir"], self.config["dbfilename"])
+        try:
+            rdb_parser = RdbParser(rdb_path)
+            data = rdb_parser.parse()
+
+            for key, (value, expiry) in data.items():
+                self.store.set(key, value, expiry)
+        except FileNotFoundError:
+            # 파일이 없으면 빈 데이터베이스로 처리
+            print(f"RDB file not found: {rdb_path}")
+        except Exception as e:
+            print(f"Error loading RDB file: {e}")
 
 async def main() -> None:
     # Parse command line arguments
