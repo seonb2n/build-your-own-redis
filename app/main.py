@@ -520,9 +520,21 @@ class RedisServer:
                      ] + [self.builder.bulk_string(arg) for arg in args]
         command_array = self.builder.array(resp_items)
 
+        # Increment the master replication offset
+        self.master_repl_offset += len(command_array)
+
         for replica in self.replicas:
             try:
                 replica.write(command_array)
+                await replica.drain()
+
+                # After propagating the command, send REPLCONF GETACK to get acknowledgment
+                getack_command = self.builder.array([
+                    self.builder.bulk_string("REPLCONF"),
+                    self.builder.bulk_string("GETACK"),
+                    self.builder.bulk_string("*")
+                ])
+                replica.write(getack_command)
                 await replica.drain()
             except Exception as e:
                 print(f"Error writing to replica: {e}")
