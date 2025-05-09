@@ -168,7 +168,7 @@ class RedisServer:
                     break
 
                 command, args = self.parser.parse(data)
-                response = self.handle_command(command, args, writer, from_master=False)
+                response = await self.handle_command(command, args, writer, from_master=False)
 
                 writer.write(response)
                 await writer.drain()
@@ -324,7 +324,7 @@ class RedisServer:
     def _load_rdb_from_bytes(self, rdb_content: bytes) -> None:
         pass
 
-    def handle_command(self, command: Optional[str], args: List[str], writer = None, from_master = False) -> bytes:
+    async def handle_command(self, command: Optional[str], args: List[str], writer = None, from_master = False) -> bytes:
         if command is None:
             return self.builder.error("ERR protocol error")
 
@@ -338,16 +338,18 @@ class RedisServer:
             Commands.INFO: self.handle_info,
             Commands.REPLCONF: lambda args: self.handle_replconf(args, writer),
             Commands.PSYNC: lambda args: self.handle_psync(args, writer = writer),
-            Commands.WAIT: None,
+            Commands.WAIT: self.handle_wait,
         }
 
         handler = handlers.get(command)
 
-        if command == Commands.WAIT:
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.handle_wait(args))
-        elif handler:
-            response = handler(args)
+        if handler:
+            if command == Commands.WAIT:
+                # For WAIT, we need to await the result
+                response = await handler(args)
+            else:
+                response = handler(args)
+                
             if command in Commands.WRITE_COMMANDS and not from_master:
                 # Run propagation asynchronously
                 asyncio.create_task(self.propagate_command(command, args))
