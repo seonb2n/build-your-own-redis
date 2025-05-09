@@ -311,16 +311,31 @@ class RedisServer:
                         break
                     buffer = new_buffer
                     if command in Commands.WRITE_COMMANDS:
-                        # Just execute the command, don't send a response back to the master
-                        await self.handle_command(command, args, from_master=True)
+                        # For write commands, we should update our state but not send a response
+                        # We need to apply the command to our local store
+                        if command == Commands.SET and len(args) >= 2:
+                            key, value = args[0], args[1]
+                            expiry = None
+                            if len(args) > 2 and args[2].upper() == "PX" and len(args) > 3:
+                                try:
+                                    expiry_ms = int(args[3])
+                                    expiry = datetime.datetime.now() + datetime.timedelta(milliseconds=expiry_ms)
+                                except (ValueError, IndexError):
+                                    pass
+                            self.store.set(key, value, expiry)
                     elif command == Commands.REPLCONF and args and args[0].upper() == 'GETACK':
-                        response = await self.handle_command(command, args, writer=writer, from_master=True)
-                        writer.write(response)
+                        # Send ACK response back to master
+                        ack_response = self.builder.array([
+                            self.builder.bulk_string("REPLCONF"),
+                            self.builder.bulk_string("ACK"),
+                            self.builder.bulk_string(str(self.master_repl_offset))
+                        ])
+                        writer.write(ack_response)
                         await writer.drain()
                     self.master_repl_offset += byte_size
 
         except Exception as e:
-            print(f"Failed to send PING to master: {e}")
+            print(f"Failed to connect to master: {e}")
 
     async def handle_command(self, command: Optional[str], args: List[str], writer = None, from_master = False) -> bytes:
         if command is None:
