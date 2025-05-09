@@ -145,6 +145,7 @@ class RedisServer:
         self.port = port
         self._replicaof = replicaof
         self.replicas: List[asyncio.StreamWriter] = []
+        self.replica_offsets = {}
         self._load_rdb()
 
     async def async_init(self):
@@ -158,6 +159,9 @@ class RedisServer:
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
+            current_task = asyncio.current_task()
+            current_task.writer = writer
+
             while True:
                 data = await reader.read(1024)
                 if not data:
@@ -332,13 +336,17 @@ class RedisServer:
             Commands.CONFIG: self.handle_config,
             Commands.KEYS: self.handle_keys,
             Commands.INFO: self.handle_info,
-            Commands.REPLCONF: self.handle_replconf,
+            Commands.REPLCONF: lambda args: self.handle_replconf(args, writer),
             Commands.PSYNC: lambda args: self.handle_psync(args, writer = writer),
-            Commands.WAIT: self.handle_wait,
+            Commands.WAIT: None,
         }
 
         handler = handlers.get(command)
-        if handler:
+
+        if command == Commands.WAIT:
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(self.handle_wait(args))
+        elif handler:
             response = handler(args)
             if command in Commands.WRITE_COMMANDS and not from_master:
                 # Run propagation asynchronously
@@ -351,8 +359,36 @@ class RedisServer:
     def handle_ping(self, args: List[str]) -> bytes:
         return self.builder.simple_string("PONG")
 
-    def handle_wait(self, args: List[str]) -> bytes:
-        return self.builder.integer(len(self.replicas))
+    async def handle_wait(self, args: List[str]) -> bytes:
+        if len(args) < 2:
+            return self.builder.error("ERR wrong number of arguments for 'wait' command")
+
+        try:
+            num_replicas = int(args[0])
+            timeout_ms = int(args[1])
+        except ValueError:
+            return self.builder.error("ERR value is not an integer or out of range")
+
+        current_offset = self.master_repl_offset
+
+        acknowledged_replicas = 0
+        start_time = asyncio.get_event_loop().time()
+
+        timeout = timeout_ms / 1000.0
+
+        while True:
+            acknowledged_replicas = 0
+
+            for replica in self.replicas:
+                replica_id = id(replica)
+                if replica_id in self.replica_offsets and self.replica_offsets[replica_id] >= current_offset:
+                    acknowledged_replicas += 1
+
+            if acknowledged_replicas >= num_replicas or (asyncio.get_event_loop().time() - start_time) >= timeout:
+                return self.builder.integer(acknowledged_replicas)
+
+            await asyncio.sleep(0.01)
+
 
     def handle_echo(self, args: List[str]) -> bytes:
         if not args:
@@ -426,7 +462,7 @@ class RedisServer:
         resp_keys = [self.builder.bulk_string(key) for key in keys]
         return self.builder.array(resp_keys)
 
-    def handle_replconf(self, args: List[str]) -> bytes:
+    def handle_replconf(self, args: List[str], writer = None) -> bytes:
         subcommand = args[0].upper()
         if subcommand == "GETACK":
             return self.builder.array([
@@ -434,6 +470,13 @@ class RedisServer:
                 self.builder.bulk_string("ACK"),
                 self.builder.bulk_string(str(self.master_repl_offset))
             ])
+        elif subcommand == "ACK" and len(args) > 1:
+            try:
+                replica_id = id(writer)
+                ack_offset = int(args[1])
+                self.replica_offsets[replica_id] = ack_offset
+            except (ValueError, AttributeError):
+                pass
         return self.builder.simple_string("OK")
 
     def handle_psync(self, args: List[str], writer: asyncio.StreamWriter) -> bytes:
@@ -446,6 +489,10 @@ class RedisServer:
         empty_rdb_bytes = bytes.fromhex(empty_rdb_hex)
         rdb_response = f"${len(empty_rdb_bytes)}\r\n".encode() + empty_rdb_bytes
         self.replicas.append(writer)
+
+        replica_id = id(writer)
+        self.replica_offsets[replica_id] = 0
+
         return fullresync_response + rdb_response
 
     def _load_rdb(self):
