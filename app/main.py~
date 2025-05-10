@@ -531,35 +531,7 @@ class RedisServer:
     async def propagate_command(self, command:str, args:List[str]) -> None:
         if not self.replicas:
             return
-
-        command_items = [self.builder.bulk_string(command)]
-        for arg in args:
-            command_items.append(self.builder.bulk_string(arg))
-        command_array = self.builder.array(command_items)
-
-        command_size = len(command_array)
-
-        self.master_repl_offset += command_size
-
-        for replica in list(self.replicas):
-            try:
-                replica.write(command_array)
-                await replica.drain()
-
-                getack_command = self.builder.array([
-                    self.builder.bulk_string("REPLCONF"),
-                    self.builder.bulk_string("GETACK"),
-                    self.builder.bulk_string("*")
-                ])
-                replica.write(getack_command)
-                await replica.drain()
-            except Exception as e:
-                print(f"Error writing to replica: {e}")
-                if replica in self.replicas:
-                    self.replicas.remove(replica)
-                    replica_id = id(replica)
-                    if replica_id in self.replica_offsets:
-                        del self.replica_offsets[replica_id]
+        
 
 
     def _load_rdb(self):
