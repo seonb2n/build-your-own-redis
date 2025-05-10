@@ -170,8 +170,9 @@ class RedisServer:
                 command, args = self.parser.parse(data)
                 response = await self.handle_command(command, args, writer, from_master=False)
 
-                writer.write(response)
-                await writer.drain()
+                if not writer in self.replicas:
+                    writer.write(response)
+                    await writer.drain()
         except Exception as e:
             print(f"Error handling client: {e}")
         finally:
