@@ -25,7 +25,6 @@ class Commands:
     GET = "GET"
     CONFIG = "CONFIG"
     KEYS = "KEYS"
-    TYPE = "TYPE"
     INFO = "INFO"
     REPLCONF = "REPLCONF"
     PSYNC = "PSYNC"
@@ -42,7 +41,6 @@ class Commands:
         GET: CommandType.READ,
         CONFIG: CommandType.ADMIN,
         KEYS: CommandType.READ,
-        TYPE: CommandType.READ,
         INFO: CommandType.ADMIN,
         REPLCONF: CommandType.REPLICATION,
         PSYNC: CommandType.REPLICATION,
@@ -191,7 +189,6 @@ class RedisServer:
             Commands.ECHO: self._handle_echo,
             Commands.SET: self._handle_set,
             Commands.GET: self._handle_get,
-            Commands.TYPE: self._handle_type,
             Commands.CONFIG: self._handle_config,
             Commands.KEYS: self._handle_keys,
             Commands.INFO: self._handle_info,
@@ -451,17 +448,6 @@ class RedisServer:
             return self._builder.null()
 
         return self._builder.simple_string(value)
-
-    def _handle_type(self, args: List[str]) -> bytes:
-        """Handle TYPE command"""
-        if not args:
-            return self._builder.error("ERR wrong number of arguments for 'get' command")
-
-        value = self._store.get(args[0])
-        if value is None:
-            return self._builder.simple_string("none")
-
-        return self._builder.simple_string("string")
 
     def _handle_config(self, args: List[str]) -> bytes:
         """Handle CONFIG command"""
