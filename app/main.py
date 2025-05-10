@@ -384,8 +384,28 @@ class RedisServer:
             return self.builder.error("ERR value is not an integer or out of range")
 
         current_offset = self.master_repl_offset
-
         acknowledged_replicas = 0
+
+        # Send REPLCONF GETACK to all replicas
+        getack_command = self.builder.array([
+            self.builder.bulk_string("REPLCONF"),
+            self.builder.bulk_string("GETACK"),
+            self.builder.bulk_string("*")
+        ])
+
+        for replica in list(self.replicas):
+            try:
+                replica.write(getack_command)
+                await replica.drain()
+            except Exception as e:
+                print(f"Error sending GETACK to replica: {e}")
+                if replica in self.replicas:
+                    self.replicas.remove(replica)
+                    replica_id = id(replica)
+                    if replica_id in self.replica_offsets:
+                        del self.replica_offsets[replica_id]
+
+        # Check initial acknowledgments
         for replica_id, offset in self.replica_offsets.items():
             if offset >= current_offset:
                 acknowledged_replicas += 1
@@ -398,22 +418,18 @@ class RedisServer:
 
         # Wait for acknowledgments or timeout
         while True:
-            # Check if we have enough acknowledgments
             acknowledged_replicas = 0
             for replica_id, offset in list(self.replica_offsets.items()):
                 if offset >= current_offset:
                     acknowledged_replicas += 1
 
-            # Return if we have enough replicas or timeout
             if acknowledged_replicas >= num_replicas:
                 return self.builder.integer(acknowledged_replicas)
 
-            # Check if timeout expired
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed >= timeout:
                 return self.builder.integer(acknowledged_replicas)
 
-            # Wait a bit before checking again (to avoid CPU spinning)
             await asyncio.sleep(0.01)
 
 
@@ -529,7 +545,7 @@ class RedisServer:
     def _load_rdb_from_bytes(self, rdb_content: bytes) -> None:
         pass
 
-    async def propagate_command(self, command:str, args:List[str]) -> None:
+    async def propagate_command(self, command: str, args: List[str]) -> None:
         if not self.replicas:
             return
 
@@ -539,20 +555,11 @@ class RedisServer:
         command_array = self.builder.array(command_items)
 
         command_size = len(command_array)
-
         self.master_repl_offset += command_size
 
         for replica in list(self.replicas):
             try:
                 replica.write(command_array)
-                await replica.drain()
-
-                getack_command = self.builder.array([
-                    self.builder.bulk_string("REPLCONF"),
-                    self.builder.bulk_string("GETACK"),
-                    self.builder.bulk_string("*")
-                ])
-                replica.write(getack_command)
                 await replica.drain()
             except Exception as e:
                 print(f"Error writing to replica: {e}")
