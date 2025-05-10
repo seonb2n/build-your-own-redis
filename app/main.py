@@ -170,7 +170,7 @@ class RedisServer:
                 command, args = self.parser.parse(data)
                 response = await self.handle_command(command, args, writer, from_master=False)
 
-                if not writer in self.replicas:
+                if command == Commands.PSYNC or not writer in self.replicas:
                     writer.write(response)
                     await writer.drain()
         except Exception as e:
