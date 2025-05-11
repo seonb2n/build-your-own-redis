@@ -462,7 +462,12 @@ class RedisServer:
         key = args[0]
         entry_id = args[1]
         values = args[2:]
-        result = self._store.xadd(key, entry_id, values)
+        try:
+            result = self._store.xadd(key, entry_id, values)
+        except ValueError as e:
+            error_message = str(e)
+            return self._builder.error(error_message)
+
         return self._builder.simple_string(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
