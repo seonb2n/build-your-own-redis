@@ -30,6 +30,7 @@ class Commands:
     REPLCONF = "REPLCONF"
     PSYNC = "PSYNC"
     WAIT = "WAIT"
+    XADD = "XADD"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -40,6 +41,7 @@ class Commands:
         ECHO: CommandType.READ,
         SET: CommandType.WRITE,
         GET: CommandType.READ,
+        XADD: CommandType.WRITE,
         CONFIG: CommandType.ADMIN,
         KEYS: CommandType.READ,
         TYPE: CommandType.READ,
@@ -191,6 +193,7 @@ class RedisServer:
             Commands.ECHO: self._handle_echo,
             Commands.SET: self._handle_set,
             Commands.GET: self._handle_get,
+            Commands.XADD: self._handle_xadd,
             Commands.TYPE: self._handle_type,
             Commands.CONFIG: self._handle_config,
             Commands.KEYS: self._handle_keys,
@@ -443,25 +446,33 @@ class RedisServer:
 
     def _handle_get(self, args: List[str]) -> bytes:
         """Handle GET command"""
-        if not args:
+        if len(args) != 1:
             return self._builder.error("ERR wrong number of arguments for 'get' command")
 
-        value = self._store.get(args[0])
-        if value is None:
+        result = self._store.get(args[0])
+        if result is None:
             return self._builder.null()
 
-        return self._builder.simple_string(value)
+        data_type, value = result
+        return self._builder.bulk_string(value)
+
+
+    def _handle_xadd(self, args: List[str]) -> bytes:
+        """Handle XADD command"""
+        key = args[0]
+        entry_id = args[1]
+        values = args[2:]
+        result = self._store.xadd(key, entry_id, values)
+        return self._builder.simple_string(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
         if not args:
-            return self._builder.error("ERR wrong number of arguments for 'get' command")
+            return self._builder.error("ERR wrong number of arguments for 'type' command")
 
-        value = self._store.get(args[0])
-        if value is None:
-            return self._builder.simple_string("none")
+        data_type = self._store.type(args[0])
+        return self._builder.simple_string(data_type)
 
-        return self._builder.simple_string("string")
 
     def _handle_config(self, args: List[str]) -> bytes:
         """Handle CONFIG command"""
