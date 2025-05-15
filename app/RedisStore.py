@@ -39,7 +39,29 @@ class RedisStore:
         stream = None
         if key in self.data and self.data[key][0] == 'stream':
             stream = self.data[key][1]
-        self.validate_entry_id(entry_id, stream)
+
+        if '-*' in entry_id:
+            time_part = entry_id.split('-')[0]
+            time_part_int = int(time_part)
+            max_seq = -1
+            if stream:
+                for entry in stream:
+                    entry_time, entry_seq = map(int, entry["id"].split('-'))
+                    if entry_time == time_part_int and entry_seq > max_seq:
+                        max_seq = entry_seq
+
+            if max_seq == -1:
+                if time_part_int == 0:
+                    seq = 1  # time_part가 0일 경우 시퀀스는 1로 시작
+                else:
+                    seq = 0  # 기본 시퀀스는 0
+            else:
+                seq = max_seq + 1  # 마지막 시퀀스 번호 + 1
+            # 새 entry_id 생성
+            entry_id = f"{time_part}-{seq}"
+        else:
+            self.validate_entry_id(entry_id, stream)
+
 
         entry = {
             "id": entry_id,
