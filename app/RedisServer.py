@@ -468,7 +468,7 @@ class RedisServer:
             error_message = str(e)
             return self._builder.error(error_message)
 
-        return self._builder.simple_string(result)
+        return self._builder.bulk_string(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""

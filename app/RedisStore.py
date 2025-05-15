@@ -1,4 +1,5 @@
 import datetime
+import time
 from typing import Dict, List, Optional, Tuple, Union
 import re
 
@@ -40,7 +41,17 @@ class RedisStore:
         if key in self.data and self.data[key][0] == 'stream':
             stream = self.data[key][1]
 
-        if '-*' in entry_id:
+        if entry_id == "*":
+            current_time_ms = int(time.time() * 1000)
+            seq = 0
+            if stream:
+                for entry in stream:
+                    entry_time, entry_seq = map(int, entry["id"].split('-'))
+                    if entry_time == current_time_ms:
+                        seq = max(seq, entry_seq + 1)
+            entry_id = f"{current_time_ms}-{seq}"
+
+        elif '-*' in entry_id:
             time_part = entry_id.split('-')[0]
             time_part_int = int(time_part)
             max_seq = -1
