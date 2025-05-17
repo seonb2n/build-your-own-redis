@@ -99,11 +99,9 @@ class RedisStore:
         return entry_id
 
     def xrange(self, key: str, entry_start: str, entry_end: str) -> List[List]:
-        stream = None
-        if key in self.data and self.data[key][0] == 'stream':
+        if key in self.data and self.data[key][0] != 'stream':
             return []
 
-        ## todo entry_start, end 범위에 맞는 값 찾기
         _, stream, expiry = self.data[key]
 
         # 만료 시간 확인
@@ -125,7 +123,6 @@ class RedisStore:
         for entry in stream:
             entry_id = entry["id"]
             entry_time, entry_seq = map(int, entry_id.split('-'))
-
             if (entry_time > start_time or (entry_time == start_time and entry_seq >= start_seq)) \
                 and (entry_time < end_time or (entry_time == end_time and entry_seq <= end_seq)):
                 fields_list = []
