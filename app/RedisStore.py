@@ -134,7 +134,7 @@ class RedisStore:
                     fields_list.append(field_value)
 
                 result.append([entry_id, fields_list])
-
+        print(result)
         return result
 
 
