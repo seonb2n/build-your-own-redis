@@ -98,6 +98,46 @@ class RedisStore:
 
         return entry_id
 
+    def xrange(self, key: str, entry_start: str, entry_end: str) -> List[List]:
+        stream = None
+        if key in self.data and self.data[key][0] == 'stream':
+            return []
+
+        ## todo entry_start, end 범위에 맞는 값 찾기
+        _, stream, expiry = self.data[key]
+
+        # 만료 시간 확인
+        if expiry != -1 and datetime.datetime.now() >= expiry:
+            del self.data[key]
+            return []
+
+        if '-' not in entry_start:
+            entry_start = f"{entry_start}-0"
+
+        if '-' not in entry_end:
+            entry_end = f"{entry_end}-18446744073709551615"
+
+        start_time, start_seq = map(int, entry_start.split('-'))
+        end_time, end_seq = map(int, entry_end.split('-'))
+
+        # 시작 ID 부터 종료 ID 까지 필터링
+        result = []
+        for entry in stream:
+            entry_id = entry["id"]
+            entry_time, entry_seq = map(int, entry_id.split('-'))
+
+            if (entry_time > start_time or (entry_time == start_time and entry_seq >= start_seq)) \
+                and (entry_time < end_time or (entry_time == end_time and entry_seq <= end_seq)):
+                fields_list = []
+                for field_name, field_value in entry["fields"].items():
+                    fields_list.append(field_name)
+                    fields_list.append(field_value)
+
+                result.append([entry_id, fields_list])
+
+        return result
+
+
     def get_all_keys(self) -> List[str]:
         """만료되지 않은 모든 키 목록 반환"""
         now = datetime.datetime.now()

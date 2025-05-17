@@ -31,6 +31,7 @@ class Commands:
     PSYNC = "PSYNC"
     WAIT = "WAIT"
     XADD = "XADD"
+    XRANGE = "XRANGE"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -42,6 +43,7 @@ class Commands:
         SET: CommandType.WRITE,
         GET: CommandType.READ,
         XADD: CommandType.WRITE,
+        XRANGE: CommandType.READ,
         CONFIG: CommandType.ADMIN,
         KEYS: CommandType.READ,
         TYPE: CommandType.READ,
@@ -194,6 +196,7 @@ class RedisServer:
             Commands.SET: self._handle_set,
             Commands.GET: self._handle_get,
             Commands.XADD: self._handle_xadd,
+            Commands.XRANGE: self._handle_xrange,
             Commands.TYPE: self._handle_type,
             Commands.CONFIG: self._handle_config,
             Commands.KEYS: self._handle_keys,
@@ -469,6 +472,18 @@ class RedisServer:
             return self._builder.error(error_message)
 
         return self._builder.bulk_string(result)
+
+    def _handle_xrange(self, args: List[str]) -> bytes:
+        """Handle XRANGE command"""
+        key = args[0]
+        entry_start = args[1]
+        entry_end = args[2]
+        try:
+            result = self._store.xrange(key, entry_start, entry_end)
+        except ValueError as e:
+            error_message = str(e)
+            return self._builder.error(error_message)
+        return self._builder.array(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
