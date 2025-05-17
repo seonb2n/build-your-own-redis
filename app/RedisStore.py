@@ -123,6 +123,7 @@ class RedisStore:
         for entry in stream:
             entry_id = entry["id"]
             entry_time, entry_seq = map(int, entry_id.split('-'))
+            print("entry_time" + f"{entry_time}")
             if (entry_time > start_time or (entry_time == start_time and entry_seq >= start_seq)) \
                 and (entry_time < end_time or (entry_time == end_time and entry_seq <= end_seq)):
                 fields_list = []
