@@ -107,3 +107,26 @@ class RespBuilder:
         for item in items:
             result += item
         return result
+
+    @staticmethod
+    def nested_array(items: List[List]) -> bytes:
+        result = f"{RESP_ARRAY_PREFIX.decode()}{len(items)}{CRLF.decode()}".encode()
+        for item in items:
+            # 각 항목은 [id, [field1, value1, ...]] 형식
+            entry_id, fields = item
+
+            # 내부 배열(스트림 항목) 시작
+            result += f"{RESP_ARRAY_PREFIX.decode()}2{CRLF.decode()}".encode()
+
+            # Entry ID를 bulk string으로 인코딩
+            result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(entry_id)}{CRLF.decode()}{entry_id}{CRLF.decode()}".encode()
+
+            # 필드 배열 시작
+            result += f"{RESP_ARRAY_PREFIX.decode()}{len(fields)}{CRLF.decode()}".encode()
+
+            # 각 필드와 값을 bulk string으로 인코딩
+            for field_item in fields:
+                field_str = str(field_item)  # 값이 문자열이 아닐 수 있으므로 변환
+                result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(field_str)}{CRLF.decode()}{field_str}{CRLF.decode()}".encode()
+
+        return result

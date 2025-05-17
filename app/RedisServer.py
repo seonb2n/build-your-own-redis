@@ -483,7 +483,7 @@ class RedisServer:
         except ValueError as e:
             error_message = str(e)
             return self._builder.error(error_message)
-        return self._builder.array(result)
+        return self._builder.nested_array(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
