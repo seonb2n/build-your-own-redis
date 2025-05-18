@@ -180,6 +180,36 @@ class RedisStore:
 
         return result
 
+    def get_last_id(self, key: str) -> Optional[str]:
+        """스트림의 마지막 ID 반환
+
+        Args:
+            key: 스트림 키
+
+        Returns:
+            마지막 엔트리의 ID 또는 스트림이 존재하지 않거나 비어있으면 None
+        """
+        if key not in self.data:
+            return None
+
+        data_type, value, expiry = self.data[key]
+
+        # 키가 스트림 타입이 아니면 None 반환
+        if data_type != "stream":
+            return None
+
+        # 만료 시간 확인
+        if expiry != -1 and datetime.datetime.now() >= expiry:
+            del self.data[key]
+            return None
+
+        # 스트림이 비어있는지 확인
+        if not value or len(value) == 0:
+            return None
+
+        # 마지막 엔트리의 ID 반환
+        return value[-1]["id"]
+
     def validate_entry_id(self, entry_id: str, stream: Optional[List[Dict]]) -> None:
         if not re.match(r'^\d+-\d+$', entry_id):
             raise ValueError("ERR Invalid entry ID format")

@@ -512,45 +512,70 @@ class RedisServer:
 
         keys_and_ids = args[streams_index + 1:]
         num_keys = len(keys_and_ids) // 2
-
         if len(keys_and_ids) % 2 != 0 or num_keys == 0:
             return self._builder.error("ERR wrong number of arguments for 'xread' command")
 
         keys = keys_and_ids[:num_keys]
         ids = keys_and_ids[num_keys:]
 
+        # $ 식별자 처리 - 새로운 스트림 항목을 기다리기 위한 최신 ID 처리
+        for i, id_str in enumerate(ids):
+            if id_str == "$":
+                # 해당 스트림의 마지막 ID 얻기
+                last_id = self._store.get_last_id(keys[i])
+                if last_id:
+                    ids[i] = last_id
+                else:
+                    # 스트림이 비어있거나 존재하지 않는 경우 0-0 사용
+                    ids[i] = "0-0"
+
+        # 초기 결과 확인
         final_result = self._get_xread_results(keys, ids, options)
+        if final_result:
+            return self._builder.xread_response(final_result)
 
         # BLOCK 옵션이 있고 결과가 없는 경우 대기
         block_timeout = options.get("block")
-        if block_timeout is not None:
+        if block_timeout is None:
+            # block 옵션이 없으면 바로 결과 반환
+            return self._builder.null() if not final_result else self._builder.xread_response(final_result)
 
-            # 대기
-            await asyncio.sleep(block_timeout / 1000)
-            # 다시 결과 확인
-            final_result = self._get_xread_results(keys, ids, options)
+        # 블로킹 모드에서의 대기 처리
+        start_time = time.time()
 
-        # 결과가 없으면 null 반환
-        if not final_result:
+        # block이 0인 경우, 결과가 나올 때까지 계속 폴링
+        if block_timeout == 0:
+            while True:
+                # 잠깐 대기 후 다시 확인
+                await asyncio.sleep(0.1)  # 100ms마다 폴링
+                final_result = self._get_xread_results(keys, ids, options)
+                if final_result:
+                    return self._builder.xread_response(final_result)
+        else:
+            # 지정된 시간동안 폴링
+            end_time = start_time + (block_timeout / 1000)
+            while time.time() < end_time:
+                await asyncio.sleep(0.1)  # 100ms마다 폴링
+                final_result = self._get_xread_results(keys, ids, options)
+                if final_result:
+                    return self._builder.xread_response(final_result)
+
+            # 타임아웃에 도달하면 nil 반환
             return self._builder.null()
-
-        return self._builder.xread_response(final_result)
 
     def _get_xread_results(self, keys: List[str], ids: List[str], options: Dict) -> List:
         """XREAD 결과 가져오기"""
         final_result = []
-
         # 각 스트림에 대해 처리
         for i, key in enumerate(keys):
             try:
                 # 각 키에 대한 결과 가져오기
                 result = self._store.xread(key, ids[i])
-                if result or len(result) > 0:  # 결과가 있는 경우에만 추가
+                if result and len(result) > 0:  # 결과가 있는 경우에만 추가
                     final_result.extend(result)
             except ValueError as e:
                 # 여기서는 오류 발생 시 해당 스트림만 건너뜀
                 continue
-
         return final_result
 
     def _handle_type(self, args: List[str]) -> bytes:
