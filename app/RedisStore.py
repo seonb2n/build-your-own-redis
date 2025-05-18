@@ -96,6 +96,8 @@ class RedisStore:
                 value.append(entry)
                 self.data[key] = ("stream", value, expiry)
 
+        _, stream, expiry = self.data[key]
+
         return entry_id
 
     def xrange(self, key: str, entry_start: str, entry_end: str) -> List[List]:
@@ -151,15 +153,16 @@ class RedisStore:
         for entry in stream:
             entry_id = entry["id"]
             entry_time, entry_seq = map(int, entry_id.split('-'))
-            if entry_time > start_time or (entry_time == start_time and entry_seq >= start_seq):
+            if entry_time > start_time or (entry_time == start_time and entry_seq > start_seq):
                 fields_list = []
                 for field_name, field_value in entry["fields"].items():
                     fields_list.append(field_name)
                     fields_list.append(field_value)
 
-                result.append([key, [[entry_id, fields_list]]])
-                break
-        return result
+                result.append([entry_id, fields_list])
+        if not result:
+            return []
+        return [[key, result]]
 
 
     def get_all_keys(self) -> List[str]:

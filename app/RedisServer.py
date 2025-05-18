@@ -1,8 +1,12 @@
 import os.path
 import datetime
+import queue
+import threading
+import time
 from typing import Dict, List, Optional, Tuple, Any, Set, Callable
 import asyncio
 from enum import Enum, auto
+
 from app.RdbParse import RdbParser
 from app.RedisStore import RedisStore
 from app.RespUtils import RespBuilder, RespParser
@@ -257,7 +261,7 @@ class RedisServer:
             elif command == Commands.PSYNC:
                 response = handler(args, writer)
             # Special case for WAIT which is async
-            elif command == Commands.WAIT:
+            elif command == Commands.WAIT or command == Commands.XREAD:
                 response = await handler(args)
             else:
                 response = handler(args)
@@ -488,12 +492,24 @@ class RedisServer:
             return self._builder.error(error_message)
         return self._builder.nested_array(result)
 
-    def _handle_xread(self, args: List[str]) -> bytes:
+    async def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
         if "streams" not in args:
             return self._builder.error("ERR syntax error, STREAMS keyword required")
 
         streams_index = args.index("streams")
+        options = {}
+        i = 0
+        while i < streams_index:
+            if args[i].upper() == "BLOCK" and i + 1 < streams_index:
+                try:
+                    options["block"] = int(args[i + 1])
+                    i += 2
+                except ValueError:
+                    return self._builder.error("ERR value is not an integer or out of range")
+            else:
+                i += 1  # 알 수 없는 옵션은 건너뜀
+
         keys_and_ids = args[streams_index + 1:]
         num_keys = len(keys_and_ids) // 2
 
@@ -503,17 +519,39 @@ class RedisServer:
         keys = keys_and_ids[:num_keys]
         ids = keys_and_ids[num_keys:]
 
+        final_result = self._get_xread_results(keys, ids, options)
+
+        # BLOCK 옵션이 있고 결과가 없는 경우 대기
+        block_timeout = options.get("block")
+        if block_timeout is not None:
+
+            # 대기
+            await asyncio.sleep(block_timeout / 1000)
+            # 다시 결과 확인
+            final_result = self._get_xread_results(keys, ids, options)
+
+        # 결과가 없으면 null 반환
+        if not final_result:
+            return self._builder.null()
+
+        return self._builder.xread_response(final_result)
+
+    def _get_xread_results(self, keys: List[str], ids: List[str], options: Dict) -> List:
+        """XREAD 결과 가져오기"""
         final_result = []
 
+        # 각 스트림에 대해 처리
         for i, key in enumerate(keys):
             try:
-               result = self._store.xread(key, ids[i])
-               if result:
+                # 각 키에 대한 결과 가져오기
+                result = self._store.xread(key, ids[i])
+                if result or len(result) > 0:  # 결과가 있는 경우에만 추가
                     final_result.extend(result)
             except ValueError as e:
-                error_message = str(e)
-                return self._builder.error(error_message)
-        return self._builder.xread_response(final_result)
+                # 여기서는 오류 발생 시 해당 스트림만 건너뜀
+                continue
+
+        return final_result
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
