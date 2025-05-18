@@ -115,18 +115,54 @@ class RespBuilder:
             # 각 항목은 [id, [field1, value1, ...]] 형식
             entry_id, fields = item
 
-            # 내부 배열(스트림 항목) 시작
             result += f"{RESP_ARRAY_PREFIX.decode()}2{CRLF.decode()}".encode()
 
-            # Entry ID를 bulk string으로 인코딩
             result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(entry_id)}{CRLF.decode()}{entry_id}{CRLF.decode()}".encode()
 
-            # 필드 배열 시작
             result += f"{RESP_ARRAY_PREFIX.decode()}{len(fields)}{CRLF.decode()}".encode()
 
-            # 각 필드와 값을 bulk string으로 인코딩
             for field_item in fields:
                 field_str = str(field_item)  # 값이 문자열이 아닐 수 있으므로 변환
                 result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(field_str)}{CRLF.decode()}{field_str}{CRLF.decode()}".encode()
+
+        return result
+
+    @staticmethod
+    def xread_response(streams_data):
+        """
+        XREAD 응답 형식에 맞게 데이터 구성
+        streams_data: [["key1", [["id1", ["field1", "value1", ...]], ...]], ...]
+        """
+        result = f"{RESP_ARRAY_PREFIX.decode()}{len(streams_data)}{CRLF.decode()}".encode()
+
+        for stream_entry in streams_data:
+            key, entries = stream_entry
+
+            # 스트림 키와 항목 배열을 포함하는 배열
+            result += f"{RESP_ARRAY_PREFIX.decode()}2{CRLF.decode()}".encode()
+
+            # 스트림 키
+            key_bytes = key.encode()
+            result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(key_bytes)}{CRLF.decode()}".encode() + key_bytes + CRLF
+
+            # 항목 배열
+            result += f"{RESP_ARRAY_PREFIX.decode()}{len(entries)}{CRLF.decode()}".encode()
+
+            for entry in entries:
+                entry_id, fields_values = entry
+
+                # 항목 ID와 필드/값 배열을 포함하는 배열
+                result += f"{RESP_ARRAY_PREFIX.decode()}2{CRLF.decode()}".encode()
+
+                # 항목 ID
+                id_bytes = entry_id.encode()
+                result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(id_bytes)}{CRLF.decode()}".encode() + id_bytes + CRLF
+
+                # 필드/값 배열
+                result += f"{RESP_ARRAY_PREFIX.decode()}{len(fields_values)}{CRLF.decode()}".encode()
+
+                for field_or_value in fields_values:
+                    field_value_bytes = str(field_or_value).encode()
+                    result += f"{RESP_BULK_STRING_PREFIX.decode()}{len(field_value_bytes)}{CRLF.decode()}".encode() + field_value_bytes + CRLF
 
         return result

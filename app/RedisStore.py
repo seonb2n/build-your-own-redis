@@ -140,6 +140,27 @@ class RedisStore:
                 result.append([entry_id, fields_list])
         return result
 
+    def xread(self, key: str, start_entry: str) -> List[List]:
+        if key in self.data and self.data[key][0] != 'stream':
+            return []
+
+        _, stream, expiry = self.data[key]
+
+        result = []
+        start_time, start_seq = map(int, start_entry.split('-'))
+        for entry in stream:
+            entry_id = entry["id"]
+            entry_time, entry_seq = map(int, entry_id.split('-'))
+            if entry_time > start_time or (entry_time == start_time and entry_seq >= start_seq):
+                fields_list = []
+                for field_name, field_value in entry["fields"].items():
+                    fields_list.append(field_name)
+                    fields_list.append(field_value)
+
+                result.append([key, [[entry_id, fields_list]]])
+                break
+        return result
+
 
     def get_all_keys(self) -> List[str]:
         """만료되지 않은 모든 키 목록 반환"""

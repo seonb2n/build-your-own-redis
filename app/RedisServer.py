@@ -32,6 +32,7 @@ class Commands:
     WAIT = "WAIT"
     XADD = "XADD"
     XRANGE = "XRANGE"
+    XREAD = "XREAD"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -44,6 +45,7 @@ class Commands:
         GET: CommandType.READ,
         XADD: CommandType.WRITE,
         XRANGE: CommandType.READ,
+        XREAD: CommandType.READ,
         CONFIG: CommandType.ADMIN,
         KEYS: CommandType.READ,
         TYPE: CommandType.READ,
@@ -197,6 +199,7 @@ class RedisServer:
             Commands.GET: self._handle_get,
             Commands.XADD: self._handle_xadd,
             Commands.XRANGE: self._handle_xrange,
+            Commands.XREAD: self._handle_xread,
             Commands.TYPE: self._handle_type,
             Commands.CONFIG: self._handle_config,
             Commands.KEYS: self._handle_keys,
@@ -484,6 +487,17 @@ class RedisServer:
             error_message = str(e)
             return self._builder.error(error_message)
         return self._builder.nested_array(result)
+
+    def _handle_xread(self, args: List[str]) -> bytes:
+        """Handle XREAD command"""
+        key = args[1]
+        entry = args[2]
+        try:
+            result = self._store.xread(key, entry)
+        except ValueError as e:
+            error_message = str(e)
+            return self._builder.error(error_message)
+        return self._builder.xread_response(result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
