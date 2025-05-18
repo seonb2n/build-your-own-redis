@@ -490,14 +490,30 @@ class RedisServer:
 
     def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
-        key = args[1]
-        entry = args[2]
-        try:
-            result = self._store.xread(key, entry)
-        except ValueError as e:
-            error_message = str(e)
-            return self._builder.error(error_message)
-        return self._builder.xread_response(result)
+        if "streams" not in args:
+            return self._builder.error("ERR syntax error, STREAMS keyword required")
+
+        streams_index = args.index("streams")
+        keys_and_ids = args[streams_index + 1:]
+        num_keys = len(keys_and_ids) // 2
+
+        if len(keys_and_ids) % 2 != 0 or num_keys == 0:
+            return self._builder.error("ERR wrong number of arguments for 'xread' command")
+
+        keys = keys_and_ids[:num_keys]
+        ids = keys_and_ids[num_keys:]
+
+        final_result = []
+
+        for i, key in enumerate(keys):
+            try:
+               result = self._store.xread(key, ids[i])
+               if result:
+                    final_result.extend(result)
+            except ValueError as e:
+                error_message = str(e)
+                return self._builder.error(error_message)
+        return self._builder.xread_response(final_result)
 
     def _handle_type(self, args: List[str]) -> bytes:
         """Handle TYPE command"""
