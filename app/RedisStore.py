@@ -115,6 +115,9 @@ class RedisStore:
         if '-' not in entry_start:
             entry_start = f"{entry_start}-0"
 
+        if entry_end == '+':
+            entry_end = "18446744073709551615-18446744073709551615"
+
         if '-' not in entry_end:
             entry_end = f"{entry_end}-18446744073709551615"
 
