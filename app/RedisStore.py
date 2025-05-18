@@ -109,6 +109,9 @@ class RedisStore:
             del self.data[key]
             return []
 
+        if entry_start == '-':
+            entry_start = '0-0'
+
         if '-' not in entry_start:
             entry_start = f"{entry_start}-0"
 
