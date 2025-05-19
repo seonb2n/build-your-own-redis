@@ -37,6 +37,7 @@ class Commands:
     XADD = "XADD"
     XRANGE = "XRANGE"
     XREAD = "XREAD"
+    INCR = "INCR"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -57,6 +58,7 @@ class Commands:
         REPLCONF: CommandType.REPLICATION,
         PSYNC: CommandType.REPLICATION,
         WAIT: CommandType.REPLICATION,
+        INCR: CommandType.WRITE,
     }
     
     @classmethod
@@ -211,6 +213,7 @@ class RedisServer:
             Commands.REPLCONF: self._handle_replconf,
             Commands.PSYNC: self._handle_psync,
             Commands.WAIT: self._handle_wait,
+            Commands.INCR: self._handle_incr,
         }
 
     async def async_init(self) -> None:
@@ -466,6 +469,10 @@ class RedisServer:
         data_type, value = result
         return self._builder.bulk_string(value)
 
+    def _handle_incr(self, args: List[str]) -> bytes:
+        key = args[0]
+        result = self._store.incr(key)
+        return self._builder.integer(result)
 
     def _handle_xadd(self, args: List[str]) -> bytes:
         """Handle XADD command"""

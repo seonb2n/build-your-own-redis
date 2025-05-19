@@ -24,6 +24,15 @@ class RedisStore:
 
         return data_type, value
 
+    def incr(self, key: str) -> int:
+        if key not in self.data:
+            self.data[key] = ("string", "1", -1)
+            return 1
+        _, value = self.get(key)
+        incr_value = str(int(value) + 1)
+        self.set(key, incr_value)
+        return int(incr_value)
+
     def type(self, key: str) -> str:
         if key not in self.data:
             return "none"
