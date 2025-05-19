@@ -29,7 +29,11 @@ class RedisStore:
             self.data[key] = ("string", "1", -1)
             return 1
         _, value = self.get(key)
-        incr_value = str(int(value) + 1)
+        try:
+            int_value = int(value)
+        except ValueError:
+            raise ValueError("ERR value is not an integer or out of range")
+        incr_value = str(int_value + 1)
         self.set(key, incr_value)
         return int(incr_value)
 

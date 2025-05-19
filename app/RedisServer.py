@@ -471,7 +471,11 @@ class RedisServer:
 
     def _handle_incr(self, args: List[str]) -> bytes:
         key = args[0]
-        result = self._store.incr(key)
+        try:
+            result = self._store.incr(key)
+        except ValueError as e:
+            error_message = str(e)
+            return self._builder.error(error_message)
         return self._builder.integer(result)
 
     def _handle_xadd(self, args: List[str]) -> bytes:
