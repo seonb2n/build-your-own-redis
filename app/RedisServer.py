@@ -1,7 +1,5 @@
 import os.path
 import datetime
-import queue
-import threading
 import time
 from typing import Dict, List, Optional, Tuple, Any, Set, Callable
 import asyncio
@@ -38,6 +36,7 @@ class Commands:
     XRANGE = "XRANGE"
     XREAD = "XREAD"
     INCR = "INCR"
+    MULTI = "MULTI"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -59,6 +58,7 @@ class Commands:
         PSYNC: CommandType.REPLICATION,
         WAIT: CommandType.REPLICATION,
         INCR: CommandType.WRITE,
+        MULTI: CommandType.WRITE,
     }
     
     @classmethod
@@ -189,6 +189,8 @@ class RedisServer:
         # Server properties
         self._port = port
         self._replicaof = replicaof
+
+        self._client_transactions = {}
         
         # Load initial data
         self._load_rdb()
@@ -214,6 +216,7 @@ class RedisServer:
             Commands.PSYNC: self._handle_psync,
             Commands.WAIT: self._handle_wait,
             Commands.INCR: self._handle_incr,
+            Commands.MULTI: self._handle_multi,
         }
 
     async def async_init(self) -> None:
@@ -255,8 +258,19 @@ class RedisServer:
         if command is None:
             return self._builder.error("ERR protocol error")
 
+        client_id = id(writer) if writer else None
+
+        if command == Commands.MULTI:
+            return self._handle_multi(client_id)
+
+        # Check if client is in a transaction
+        if client_id in self._client_transactions and self._client_transactions[client_id]['in_multi']:
+            if command != "EXEC" and command != "DISCARD":
+                self._queue_command(client_id, command, args)
+                return self._builder.simple_string("QUEUED")
+
         handler = self._command_handlers.get(command)
-        
+
         if handler:
             # Special case for REPLCONF and PSYNC which need writer
             if command == Commands.REPLCONF:
@@ -502,6 +516,24 @@ class RedisServer:
             error_message = str(e)
             return self._builder.error(error_message)
         return self._builder.nested_array(result)
+
+    def _handle_multi(self, client_id: Optional[int]) -> bytes:
+        """Handle MULTI command"""
+        if client_id is None:
+            return self._builder.simple_string("OK")
+
+        # Initialize transaction state for this client
+        self._client_transactions[client_id] = {
+            'in_multi': True,
+            'queue': []
+        }
+
+        return self._builder.simple_string("OK")
+
+    def _queue_command(self, client_id: int, command: str, args: List[str]) -> None:
+        """Queue a command for later execution"""
+        if client_id in self._client_transactions:
+            self._client_transactions[client_id]['queue'].append((command, args))
 
     async def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
