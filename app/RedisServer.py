@@ -545,8 +545,13 @@ class RedisServer:
         if client_id not in self._client_transactions:
             return self._builder.error("ERR EXEC without MULTI")
 
+        if not self._client_transactions[client_id]['queue']:
+            self._client_transactions.clear()
+            return self._builder.array([])
+
         for (command, args) in self._client_transactions[client_id]['queue']:
             self._process_command(command, args)
+            self._client_transactions.clear()
 
 
     async def _handle_xread(self, args: List[str]) -> bytes:
