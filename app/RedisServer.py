@@ -38,6 +38,7 @@ class Commands:
     INCR = "INCR"
     MULTI = "MULTI"
     EXEC = "EXEC"
+    DISCARD = "DISCARD"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -61,6 +62,7 @@ class Commands:
         INCR: CommandType.WRITE,
         MULTI: CommandType.WRITE,
         EXEC: CommandType.WRITE,
+        DISCARD: CommandType.WRITE,
     }
     
     @classmethod
@@ -220,6 +222,7 @@ class RedisServer:
             Commands.INCR: self._handle_incr,
             Commands.MULTI: self._handle_multi,
             Commands.EXEC: self._handle_exec,
+            Commands.DISCARD: self._handle_discard,
         }
 
     async def async_init(self) -> None:
@@ -268,6 +271,9 @@ class RedisServer:
 
         if command == Commands.EXEC:
             return await self._handle_exec(client_id)
+
+        if command == Commands.DISCARD:
+            return self._handle_discard(client_id)
 
         # Check if client is in a transaction
         if client_id in self._client_transactions and self._client_transactions[client_id]['in_multi']:
@@ -571,6 +577,13 @@ class RedisServer:
 
         # 모든 결과를 배열로 반환
         return self._builder.array(command_results)
+
+    def _handle_discard(self, client_id: int) -> bytes:
+        if client_id not in self._client_transactions:
+            return self._builder.error("ERR DISCARD without MULTI")
+        del self._client_transactions[client_id]
+        return self._builder.simple_string("OK")
+
 
     async def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
