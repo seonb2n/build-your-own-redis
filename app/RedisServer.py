@@ -267,7 +267,7 @@ class RedisServer:
             return self._handle_multi(client_id)
 
         if command == Commands.EXEC:
-            return self._handle_exec(client_id)
+            return await self._handle_exec(client_id)
 
         # Check if client is in a transaction
         if client_id in self._client_transactions and self._client_transactions[client_id]['in_multi']:
@@ -541,18 +541,36 @@ class RedisServer:
         if client_id in self._client_transactions:
             self._client_transactions[client_id]['queue'].append((command, args))
 
-    def _handle_exec(self, client_id: int) -> bytes:
+    async def _handle_exec(self, client_id: int) -> bytes:
+        """Handle EXEC command - execute all queued commands in transaction"""
         if client_id not in self._client_transactions:
             return self._builder.error("ERR EXEC without MULTI")
 
-        if not self._client_transactions[client_id]['queue']:
-            self._client_transactions.clear()
+        transaction = self._client_transactions[client_id]
+
+        if not transaction.get('in_multi', False):
+            return self._builder.error("ERR EXEC without MULTI")
+
+        if not transaction['queue']:
+            del self._client_transactions[client_id]
             return self._builder.array([])
 
-        for (command, args) in self._client_transactions[client_id]['queue']:
-            self._process_command(command, args)
-            self._client_transactions.clear()
+        command_results = []
 
+        # 큐에 있는 모든 명령어를 순서대로 실행
+        for command, args in transaction['queue']:
+            try:
+                result = await self._process_command(command, args, from_master=False)
+                command_results.append(result)
+            except Exception as e:
+                error_response = self._builder.error(f"ERR {str(e)}")
+                command_results.append(error_response)
+
+        # 트랜잭션 상태 정리
+        del self._client_transactions[client_id]
+
+        # 모든 결과를 배열로 반환
+        return self._builder.array(command_results)
 
     async def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
