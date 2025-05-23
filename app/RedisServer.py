@@ -37,6 +37,7 @@ class Commands:
     XREAD = "XREAD"
     INCR = "INCR"
     MULTI = "MULTI"
+    EXEC = "EXEC"
 
     # Command classifications
     WRITE_COMMANDS = {SET, "DEL"}
@@ -59,6 +60,7 @@ class Commands:
         WAIT: CommandType.REPLICATION,
         INCR: CommandType.WRITE,
         MULTI: CommandType.WRITE,
+        EXEC: CommandType.WRITE,
     }
     
     @classmethod
@@ -217,6 +219,7 @@ class RedisServer:
             Commands.WAIT: self._handle_wait,
             Commands.INCR: self._handle_incr,
             Commands.MULTI: self._handle_multi,
+            Commands.EXEC: self._handle_exec,
         }
 
     async def async_init(self) -> None:
@@ -262,6 +265,9 @@ class RedisServer:
 
         if command == Commands.MULTI:
             return self._handle_multi(client_id)
+
+        if command == Commands.EXEC:
+            return self._handle_exec(client_id)
 
         # Check if client is in a transaction
         if client_id in self._client_transactions and self._client_transactions[client_id]['in_multi']:
@@ -534,6 +540,14 @@ class RedisServer:
         """Queue a command for later execution"""
         if client_id in self._client_transactions:
             self._client_transactions[client_id]['queue'].append((command, args))
+
+    def _handle_exec(self, client_id: int) -> bytes:
+        if client_id not in self._client_transactions:
+            return self._builder.error("ERR EXEC without MULTI")
+
+        for (command, args) in self._client_transactions[client_id]['queue']:
+            self._process_command(command, args)
+
 
     async def _handle_xread(self, args: List[str]) -> bytes:
         """Handle XREAD command"""
